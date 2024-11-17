@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Client-Side Request</title>
+  </head>
+  <body>
+    <h1>Client-Side Request Example</h1>
+    <button id="fetchData">Fetch Local Data</button>
+
+    <script>
+      document.getElementById("fetchData").addEventListener("click", () => {
+        // Perform a request to a local resource on the client machine
+        fetch("http://127.0.0.1:8080/list-tokens")
+          .then((response) => response.json())
+          .then((data) => {
+            // Send the fetched data back to the Flask server
+            fetch("/submit_data", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(data),
+            })
+              .then((response) => response.json())
+              .then((result) => {
+                console.log("Data successfully sent to Flask server:", result);
+              })
+              .catch((error) => {
+                console.error("Error sending data to Flask server:", error);
+              });
+          })
+          .catch((error) => {
+            console.error("Error fetching local data:", error);
+          });
+      });
+    </script>
+  </body>
+</html>
