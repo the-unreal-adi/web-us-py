@@ -2,38 +2,160 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Client-Side Request</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Digital Signature</title>
+    <style>
+      #token-list {
+        margin-top: 10px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        background-color: #f9f9f9;
+        max-width: 400px;
+      }
+      #token-list ul {
+        list-style-type: none;
+        padding: 0;
+      }
+      #token-list li {
+        padding: 5px 0;
+      }
+    </style>
   </head>
   <body>
-    <h1>Client-Side Request Example</h1>
-    <button id="fetchData">Fetch Local Data</button>
+    <h1>Register DSC Token</h1>
+    <div id="token-list">
+      <h3>Available Token</h3>
+      <ul id="token-item"></ul>
+    </div>
+    <button id="register">Register</button>
 
     <script>
-      document.getElementById("fetchData").addEventListener("click", () => {
-        // Perform a request to a local resource on the client machine
-        fetch("http://127.0.0.1:8080/list-tokens")
-          .then((response) => response.json())
+      let tokenData = null;
+
+      function loadTokens() {
+        const tokenItems = document.getElementById("token-item");
+        tokenItems.innerHTML = `<li>Loading tokens...</li>`; // Show loading message
+
+        fetch("http://127.0.0.1:8080/list-token")
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(
+                `Failed to fetch tokens. Status: ${response.status}`
+              );
+            }
+            return response.json();
+          })
           .then((data) => {
-            // Send the fetched data back to the Flask server
-            fetch("/submit_data", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(data),
-            })
-              .then((response) => response.json())
-              .then((result) => {
-                console.log("Data successfully sent to Flask server:", result);
-              })
-              .catch((error) => {
-                console.error("Error sending data to Flask server:", error);
-              });
+            tokenData = data;
+            tokenItems.innerHTML = ""; // Clear loading message
+
+            // Extract fields and display them
+            const ownerName = data.owner_name || "Unknown Owner";
+            const keyId = data.key_id || "Unknown Key";
+            const listItem = document.createElement("li");
+            listItem.textContent = `${ownerName} - ${keyId}`;
+            tokenItems.appendChild(listItem);
           })
           .catch((error) => {
-            console.error("Error fetching local data:", error);
+            console.error("Error fetching tokens:", error);
+            tokenItems.innerHTML = `<li>Error loading tokens: ${error.message}</li>`;
           });
-      });
+      }
+
+      function registerToken() {
+        if (!tokenData || tokenData.length === 0) {
+          alert("No tokens available to register.");
+          return;
+        }
+
+        fetch("/generate-challenge", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(tokenData), // Send the token's data
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.nonce && data.certificate) {
+              // Send data to the /register-token endpoint
+              fetch("http://127.0.0.1:8080/register-token", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  nonce: data.nonce,
+                  certificate: data.certificate,
+                  key_id: data.key_id,
+                }),
+              })
+                .then((response) => response.json())
+                .then((result) => {
+                  if (result.key_id && result.signature && result.timestamp) {
+                    // Pass result to /verify-registration
+                    fetch("/verify-registration", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        key_id: result.key_id,
+                        signature: result.signature,
+                        timestamp: result.timestamp,
+                      }),
+                    })
+                      .then((response) => response.json())
+                      .then((verifyResult) => {
+                        if (verifyResult.status === "success") {
+                          alert("Verification successful");
+                        } else {
+                          console.error(
+                            "Verification failed:",
+                            verifyResult.message
+                          );
+                          alert("Verification failed");
+                        }
+                      })
+                      .catch((error) => {
+                        console.error(
+                          "Error sending data to /verify-registration:",
+                          error
+                        );
+                        alert(
+                          "An error occurred during verification. Please try again."
+                        );
+                      });
+                  } else {
+                    console.error(
+                      "Error: Missing required data from /register-token response"
+                    );
+                    alert("Failed to process registration. Please try again.");
+                  }
+                })
+                .catch((error) => {
+                  console.error(
+                    "Error sending data to /register-token:",
+                    error
+                  );
+                  alert("An error occurred. Please try again.");
+                });
+            } else {
+              alert(
+                "Response from /generate-challenge is missing nonce or certificate."
+              );
+            }
+          })
+          .catch((error) => {
+            console.error("Error registering token:", error);
+            alert("An error occurred. Please try again.");
+          });
+      }
+
+      window.addEventListener("DOMContentLoaded", loadTokens);
+      document
+        .getElementById("register")
+        .addEventListener("click", registerToken);
     </script>
   </body>
 </html>
