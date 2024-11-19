@@ -6,10 +6,80 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.backends import default_backend
 import secrets
 import time
+import sqlite3
+import hashlib
+import base64
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key"  # Required for session handling
 CORS(app)
+
+def generate_id(components):
+    """
+    Generate a 16-byte hash-based ID from a list of components and return it as Base64.
+    Each component is concatenated into a single string before hashing.
+    
+    Args:
+        components (list): List of string components to include in the hash.
+
+    Returns:
+        str: Base64-encoded 16-byte hash.
+    """
+    # Join the components into a single string
+    combined_data = ''.join(components).encode('utf-8')
+    
+    # Generate a 16-byte hash (MD5)
+    hash_object = hashlib.md5(combined_data)  # Use MD5 for a 16-byte hash
+    hash_bytes = hash_object.digest()
+    
+    # Encode the hash in Base64
+    id_base64 = base64.b64encode(hash_bytes).decode('utf-8')
+    return id_base64
+
+def store_registration_data(key_id, owner_name, certificate, public_key, nonce, signature, timestamp):
+    """
+    Store the verified registration data in the 'registered_tokens' SQLite database table.
+    All fields except the ID are stored in Base64 format. The ID is derived from a hash of provided components.
+    """
+    try:
+        # Convert fields to Base64
+        certificate_base64 = base64.b64encode(certificate.encode('utf-8')).decode('utf-8')
+        public_key_base64 = base64.b64encode(public_key.encode('utf-8')).decode('utf-8')
+        signature_base64 = base64.b64encode(binascii.unhexlify(signature)).decode('utf-8')
+        nonce_base64 = base64.b64encode(nonce.encode('utf-8')).decode('utf-8')
+        key_id_base64 = base64.b64encode(key_id.encode('utf-8')).decode('utf-8')
+
+        # Generate the unique Base64 ID using a list of components
+        unique_id = generate_id([key_id, nonce, timestamp])
+
+        conn = sqlite3.connect('data.db')  # Connect to SQLite database
+        cursor = conn.cursor()
+
+        # Create the table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS registered_tokens (
+                id TEXT PRIMARY KEY,
+                key_id TEXT NOT NULL,
+                owner_name TEXT NOT NULL,
+                certificate TEXT NOT NULL,
+                public_key TEXT NOT NULL,
+                nonce TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                timestamp TEXT NOT NULL
+            )
+        ''')
+
+        # Insert the verified registration data
+        cursor.execute('''
+            INSERT INTO registered_tokens (id, key_id, owner_name, certificate, public_key, nonce, signature, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (unique_id, key_id_base64, owner_name, certificate_base64, public_key_base64, nonce_base64, signature_base64, timestamp))
+
+        conn.commit()  # Commit the transaction
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+    finally:
+        conn.close()  # Close the database connection
 
 # Route to serve the client-side script
 @app.route('/')
@@ -71,6 +141,7 @@ def verify_registration():
         public_key_hex = token_data.get("public_key")
         nonce = token_data.get("nonce")
         owner_name = token_data.get("owner_name")
+        certificate = token_data.get("certificate")
 
         if not public_key_hex or not nonce or not owner_name:
             return jsonify({"error": "Incomplete token data in session"}), 500
@@ -96,6 +167,12 @@ def verify_registration():
                 padding=padding.PKCS1v15(),  # PKCS#1 v1.5 padding
                 algorithm=hashes.SHA256()  # Explicitly specify the hash algorithm
             )
+
+            # If verification succeeds, store the data in the database
+            store_registration_data(
+                key_id, owner_name, certificate, public_key_hex, nonce, signature_hex, timestamp
+            )
+
             return jsonify({"status": "success", "message": "Signature verified successfully."}), 200
         except Exception as e:
             return jsonify({"status": "failure", "message": f"Signature verification failed: {str(e)}"}), 400

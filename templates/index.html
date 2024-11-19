@@ -108,13 +108,13 @@
                       .then((response) => response.json())
                       .then((verifyResult) => {
                         if (verifyResult.status === "success") {
-                          alert("Verification successful");
+                          alert("Registration successful");
                         } else {
                           console.error(
-                            "Verification failed:",
+                            "Registration failed:",
                             verifyResult.message
                           );
-                          alert("Verification failed");
+                          alert("Registration failed");
                         }
                       })
                       .catch((error) => {
