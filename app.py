@@ -7,36 +7,13 @@ from cryptography.hazmat.backends import default_backend
 import secrets
 import time
 import sqlite3
-import hashlib
 import base64
 
 app = Flask(__name__)
-app.secret_key = "your_secret_key"  # Required for session handling
+app.secret_key = secrets.token_hex(16)
 CORS(app)
 
-def generate_id(components):
-    """
-    Generate a 16-byte hash-based ID from a list of components and return it as Base64.
-    Each component is concatenated into a single string before hashing.
-    
-    Args:
-        components (list): List of string components to include in the hash.
-
-    Returns:
-        str: Base64-encoded 16-byte hash.
-    """
-    # Join the components into a single string
-    combined_data = ''.join(components).encode('utf-8')
-    
-    # Generate a 16-byte hash (MD5)
-    hash_object = hashlib.md5(combined_data)  # Use MD5 for a 16-byte hash
-    hash_bytes = hash_object.digest()
-    
-    # Encode the hash in Base64
-    id_base64 = base64.b64encode(hash_bytes).decode('utf-8')
-    return id_base64
-
-def store_registration_data(key_id, owner_name, certificate, public_key, nonce, signature, timestamp):
+def store_registration_data(unique_id, key_id, owner_name, certificate, public_key, nonce, signature, client_id, client_mac, client_ip, timestamp):
     """
     Store the verified registration data in the 'registered_tokens' SQLite database table.
     All fields except the ID are stored in Base64 format. The ID is derived from a hash of provided components.
@@ -49,31 +26,32 @@ def store_registration_data(key_id, owner_name, certificate, public_key, nonce, 
         nonce_base64 = base64.b64encode(nonce.encode('utf-8')).decode('utf-8')
         key_id_base64 = base64.b64encode(key_id.encode('utf-8')).decode('utf-8')
 
-        # Generate the unique Base64 ID using a list of components
-        unique_id = generate_id([key_id, nonce, timestamp])
-
-        conn = sqlite3.connect('data.db')  # Connect to SQLite database
+        conn = sqlite3.connect('signData.db')  # Connect to SQLite database
         cursor = conn.cursor()
 
         # Create the table if it doesn't exist
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS registered_tokens (
-                id TEXT PRIMARY KEY,
+                reg_id TEXT PRIMARY KEY,
                 key_id TEXT NOT NULL,
                 owner_name TEXT NOT NULL,
                 certificate TEXT NOT NULL,
                 public_key TEXT NOT NULL,
                 nonce TEXT NOT NULL,
                 signature TEXT NOT NULL,
-                timestamp TEXT NOT NULL
+                client_id TEXT NOT NULL,
+                client_mac TEXT NOT NULL,
+                client_ip TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                is_verified TEXT NOT NULL
             )
         ''')
 
         # Insert the verified registration data
         cursor.execute('''
-            INSERT INTO registered_tokens (id, key_id, owner_name, certificate, public_key, nonce, signature, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (unique_id, key_id_base64, owner_name, certificate_base64, public_key_base64, nonce_base64, signature_base64, timestamp))
+            INSERT INTO registered_tokens (reg_id, key_id, owner_name, certificate, public_key, nonce, signature, client_id, client_mac, client_ip, timestamp, is_verified)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (unique_id, key_id_base64, owner_name, certificate_base64, public_key_base64, nonce_base64, signature_base64, client_id, client_mac, client_ip, timestamp, "N"))
 
         conn.commit()  # Commit the transaction
     except sqlite3.Error as e:
@@ -98,7 +76,8 @@ def generate_challenge():
         key_id = request.json.get("key_id")
         owner_name = request.json.get("owner_name")
         public_key = request.json.get("public_key")
- 
+        client_ip = request.remote_addr
+        
         if not key_id or not certificate or not owner_name or not public_key:
             return jsonify({"error": "Missing required data"}), 400
 
@@ -111,7 +90,8 @@ def generate_challenge():
             "certificate": certificate,
             "owner_name": owner_name,
             "public_key": public_key,
-            "timestamp": time.time(),  # Current time for expiration check
+            "client_ip": client_ip,
+            "timestamp": time.time(),  
         }
 
         return jsonify({"nonce": nonce, "certificate": certificate, "key_id":key_id})
@@ -125,11 +105,14 @@ def verify_registration():
     """
     try:
         # Extract data from the request
+        unique_id = request.json.get("reg_id")
         key_id = request.json.get("key_id")
         signature_hex = request.json.get("signature")
         timestamp = request.json.get("timestamp")
+        client_id = request.json.get("client_id")
+        client_mac = request.json.get("client_mac")
 
-        if not key_id or not signature_hex or not timestamp:
+        if not unique_id or not key_id or not signature_hex or not timestamp or not client_id or not client_mac:
             return jsonify({"error": "Missing required data"}), 400
 
         # Check if the key_id exists in the session
@@ -142,6 +125,7 @@ def verify_registration():
         nonce = token_data.get("nonce")
         owner_name = token_data.get("owner_name")
         certificate = token_data.get("certificate")
+        client_ip = token_data.get("client_ip")
 
         if not public_key_hex or not nonce or not owner_name:
             return jsonify({"error": "Incomplete token data in session"}), 500
@@ -166,11 +150,11 @@ def verify_registration():
                 combined_data,  # Hash of the data
                 padding=padding.PKCS1v15(),  # PKCS#1 v1.5 padding
                 algorithm=hashes.SHA256()  # Explicitly specify the hash algorithm
-            )
+            ) 
 
             # If verification succeeds, store the data in the database
             store_registration_data(
-                key_id, owner_name, certificate, public_key_hex, nonce, signature_hex, timestamp
+                unique_id, key_id, owner_name, certificate, public_key_hex, nonce, signature_hex, client_id, client_mac, client_ip, timestamp
             )
 
             return jsonify({"status": "success", "message": "Signature verified successfully."}), 200
@@ -178,6 +162,8 @@ def verify_registration():
             return jsonify({"status": "failure", "message": f"Signature verification failed: {str(e)}"}), 400
     except Exception as e:
         return jsonify({"error": "Failed to verify registration", "details": str(e)}), 500
+    finally:
+        session.pop(key_id, None)
 
 @app.before_request
 def cleanup_session():

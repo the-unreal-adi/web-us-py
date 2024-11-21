@@ -103,6 +103,9 @@
                         key_id: result.key_id,
                         signature: result.signature,
                         timestamp: result.timestamp,
+                        client_mac: result.client_mac,
+                        client_id: result.client_id,
+                        reg_id: result.reg_id,
                       }),
                     })
                       .then((response) => response.json())
