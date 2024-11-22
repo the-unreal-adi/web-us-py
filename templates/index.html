@@ -111,20 +111,83 @@
                       .then((response) => response.json())
                       .then((verifyResult) => {
                         if (verifyResult.status === "success") {
-                          alert("Registration successful");
+                          // Call PATCH on /register-token with reg_id
+                          fetch("http://127.0.0.1:8080/register-token", {
+                            method: "PATCH",
+                            headers: {
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                              reg_id: verifyResult.reg_id,
+                            }),
+                          })
+                            .then((response) => response.json())
+                            .then((patchResult) => {
+                              if (patchResult.status === "success") {
+                                // Call PATCH on /verify-registration with reg_id
+                                fetch("/verify-registration", {
+                                  method: "PATCH",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                  },
+                                  body: JSON.stringify({
+                                    reg_id: patchResult.reg_id,
+                                  }),
+                                })
+                                  .then((response) => response.json())
+                                  .then((finalVerifyResult) => {
+                                    if (
+                                      finalVerifyResult.status === "success"
+                                    ) {
+                                      alert(
+                                        "Registration successfully completed."
+                                      );
+                                    } else {
+                                      console.error(
+                                        "Final verification failed:",
+                                        finalVerifyResult.message
+                                      );
+                                      alert(
+                                        "Final verification failed. Please try again."
+                                      );
+                                    }
+                                  })
+                                  .catch((error) => {
+                                    console.error(
+                                      "Error in final verification:",
+                                      error
+                                    );
+                                    alert(
+                                      "An error occurred during final verification. Please try again."
+                                    );
+                                  });
+                              } else {
+                                console.error(
+                                  "Error: Failed to update registration:",
+                                  patchResult.message
+                                );
+                                alert("Failed to update registration.");
+                              }
+                            })
+                            .catch((error) => {
+                              console.error(
+                                "Error updating registration with PATCH:",
+                                error
+                              );
+                              alert(
+                                "An error occurred while updating registration. Please try again."
+                              );
+                            });
                         } else {
                           console.error(
-                            "Registration failed:",
+                            "Registration verification failed:",
                             verifyResult.message
                           );
-                          alert("Registration failed");
+                          alert("Registration verification failed.");
                         }
                       })
                       .catch((error) => {
-                        console.error(
-                          "Error sending data to /verify-registration:",
-                          error
-                        );
+                        console.error("Error verifying registration:", error);
                         alert(
                           "An error occurred during verification. Please try again."
                         );
