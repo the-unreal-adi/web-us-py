@@ -35,7 +35,7 @@ def init_db():
                 client_mac TEXT NOT NULL,
                 client_ip TEXT NOT NULL,
                 timestamp TEXT NOT NULL,
-                is_verified TEXT NOT NULL
+                last_signed TEXT NOT NULL
             )
         ''')
 
@@ -69,40 +69,11 @@ def store_registration_data(unique_id, key_id, owner_name, certificate, public_k
 
         # Insert the verified registration data
         cursor.execute('''
-            INSERT INTO registered_tokens (reg_id, key_id, owner_name, certificate, public_key, nonce, signature, client_id, client_mac, client_ip, timestamp, is_verified)
+            INSERT INTO registered_tokens (reg_id, key_id, owner_name, certificate, public_key, nonce, signature, client_id, client_mac, client_ip, timestamp, last_signed)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (unique_id, key_id_base64, owner_name, certificate_base64, public_key_base64, nonce_base64, signature_base64, client_id, client_mac, client_ip, timestamp, "N"))
+        ''', (unique_id, key_id_base64, owner_name, certificate_base64, public_key_base64, nonce_base64, signature_base64, client_id, client_mac, client_ip, timestamp, timestamp,))
 
         conn.commit()  # Commit the transaction
-    except sqlite3.Error as e:
-        if conn:
-            conn.rollback()
-        print(f"Database error: {e}")
-    finally:
-        if conn:
-            conn.close()  # Close the database connection
-
-def update_registration_status(reg_id):
-    try:
-        conn = sqlite3.connect('signData.db')  # Connect to SQLite database
-        cursor = conn.cursor()
-
-        conn.execute("BEGIN")
-
-        cursor.execute("""
-            UPDATE registered_tokens
-            SET is_verified = 'Y'
-            WHERE reg_id = ? AND is_verified = 'N'
-        """, (reg_id,))
-
-        # Commit the transaction to save changes
-        conn.commit()
-
-        # Check if any row was updated
-        if cursor.rowcount == 0:
-            print(f"No record found with reg_id = {reg_id}.")
-            raise
-
     except sqlite3.Error as e:
         if conn:
             conn.rollback()
@@ -110,12 +81,43 @@ def update_registration_status(reg_id):
         raise
     finally:
         if conn:
+            conn.close()  # Close the database connection
+
+def check_reg_status(reg_id):
+    status = False
+
+    try:
+        conn = sqlite3.connect('signData.db')  
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT reg_id FROM registered_tokens WHERE reg_id = ?", (reg_id,))
+        result = cursor.fetchone()
+
+        if result:
+            status = True 
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+    finally:
+        if conn:
             conn.close()
+
+    return status
 
 # Route to serve the client-side script
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/reg-status', methods=['POST'])
+def reg_status():
+    reg_id = request.json.get("reg_id")
+
+    status = check_reg_status(reg_id)
+
+    if status:
+        return jsonify({"status": "success"}), 200
+    else:
+        return jsonify({"status": "failure"}), 400
 
 @app.route('/generate-challenge', methods=['POST'])
 def generate_challenge():
@@ -144,7 +146,7 @@ def generate_challenge():
             "owner_name": owner_name,
             "public_key": public_key,
             "client_ip": client_ip,
-            "timestamp": time.time(),  
+            "stimestamp": time.time(),  
         }
 
         return jsonify({"nonce": nonce, "certificate": certificate, "key_id":key_id})
@@ -203,12 +205,21 @@ def verify_registration():
                 combined_data,  # Hash of the data
                 padding=padding.PKCS1v15(),  # PKCS#1 v1.5 padding
                 algorithm=hashes.SHA256()  # Explicitly specify the hash algorithm
-            ) 
+            )  
 
-            # If verification succeeds, store the data in the database
-            store_registration_data(
-                unique_id, key_id, owner_name, certificate, public_key_hex, nonce, signature_hex, client_id, client_mac, client_ip, timestamp
-            )
+            session[unique_id] = {
+                "key_id": key_id,
+                "owner_name": owner_name,
+                "certificate": certificate,
+                "public_key_hex": public_key_hex,
+                "nonce": nonce,
+                "signature_hex": signature_hex,
+                "client_id": client_id,
+                "client_mac": client_mac,
+                "client_ip": client_ip,
+                "timestamp": timestamp,
+                "stimestamp": time.time(),
+            }
 
             return jsonify({"status": "success", "message": "Signature verified successfully.", "reg_id": unique_id}), 200
         except Exception as e:
@@ -223,11 +234,30 @@ def update_verification_status():
     try:
         reg_id = request.json.get("reg_id")
 
-        update_registration_status(reg_id)
+        reg_data = session.get(reg_id)
+        if not reg_data:
+            return jsonify({"error": "Registration ID not found in session"}), 404
+        
+        key_id = reg_data.get("key_id")
+        owner_name = reg_data.get("owner_name")
+        certificate = reg_data.get("certificate")
+        public_key_hex = reg_data.get("public_key_hex")
+        nonce = reg_data.get("nonce") 
+        signature_hex = reg_data.get("signature_hex") 
+        client_id = reg_data.get("client_id") 
+        client_mac = reg_data.get("client_mac") 
+        client_ip = reg_data.get("client_ip") 
+        timestamp = reg_data.get("timestamp")
+
+        store_registration_data(
+            reg_id, key_id, owner_name, certificate, public_key_hex, nonce, signature_hex, client_id, client_mac, client_ip, timestamp
+        )
 
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    finally:
+        session.pop(reg_id, None)
 
 @app.before_request
 def cleanup_session():
@@ -239,7 +269,7 @@ def cleanup_session():
         keys_to_delete = []
 
         for key, value in session.items():
-            if isinstance(value, dict) and current_time - value.get("timestamp", 0) > 90:
+            if isinstance(value, dict) and current_time - value.get("stimestamp", 0) > 90:
                 keys_to_delete.append(key)
 
         # Remove expired keys
