@@ -105,10 +105,22 @@ def check_reg_status(reg_id):
 
 # Route to serve the client-side script
 @app.route('/')
-def index():
+def return_index():
     return render_template('index.html')
 
-@app.route('/reg-status', methods=['POST'])
+@app.route('/register')
+def return_register():
+    return render_template('register.html')
+
+@app.route('/sign')
+def return_sign():
+    return render_template('sign.html')
+
+@app.route('/verify')
+def return_verify():
+    return render_template('verify.html')
+
+@app.route('/api/reg-status', methods=['POST'])
 def reg_status():
     reg_id = request.json.get("reg_id")
 
@@ -119,7 +131,7 @@ def reg_status():
     else:
         return jsonify({"status": "failure"}), 400
 
-@app.route('/generate-challenge', methods=['POST'])
+@app.route('/api/generate-challenge', methods=['POST'])
 def generate_challenge():
     """
     Generate a nonce, associate it with the provided key_id,
@@ -153,7 +165,7 @@ def generate_challenge():
     except Exception as e:
         return jsonify({"error": "Failed to generate challenge", "details": str(e)}), 500
 
-@app.route('/verify-registration', methods=['POST'])
+@app.route('/api/verify-registration', methods=['POST'])
 def verify_registration():
     """
     Verify the registration by checking the signature and timestamp for a given key_id.
@@ -229,7 +241,7 @@ def verify_registration():
     finally:
         session.pop(key_id, None)
 
-@app.route('/verify-registration', methods=['PATCH'])
+@app.route('/api/verify-registration', methods=['PATCH'])
 def update_verification_status():
     try:
         reg_id = request.json.get("reg_id")
@@ -278,4 +290,4 @@ def cleanup_session():
 
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)

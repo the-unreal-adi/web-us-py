@@ -3,267 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Digital Signature</title>
+    <title>Home - Digital Signature</title>
     <style>
+      body {
+        font-family: Arial, sans-serif;
+      }
       #token-list {
         margin-top: 10px;
-        padding: 10px;
+        padding: 20px;
         border: 1px solid #ccc;
         background-color: #f9f9f9;
         max-width: 400px;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
       }
       #token-list ul {
         list-style-type: none;
         padding: 0;
+        margin: 0;
       }
       #token-list li {
-        padding: 5px 0;
+        padding: 10px 0;
+        font-size: 16px;
+      }
+      #token-list a {
+        text-decoration: none;
+        color: #007bff;
+        font-weight: bold;
+      }
+      #token-list a:hover {
+        color: #0056b3;
+        text-decoration: underline;
       }
     </style>
   </head>
   <body>
-    <h1>Register DSC Token</h1>
+    <h1>Home</h1>
     <div id="token-list">
-      <h3>Available Token</h3>
-      <ul id="token-item"></ul>
+      <ul>
+        <li><a href="/register">Register</a></li>
+        <li><a href="/sign">Sign</a></li>
+        <li><a href="/verify">Verify</a></li>
+      </ul>
     </div>
-    <button id="register" style="display: none" disabled>Register</button>
-
-    <script>
-      let tokenData = null;
-
-      function loadTokens() {
-        const tokenItems = document.getElementById("token-item");
-        tokenItems.innerHTML = `<li>Loading tokens...</li>`; // Show loading message
-
-        fetch("http://127.0.0.1:8080/list-token")
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error(
-                `Failed to fetch tokens. Status: ${response.status}`
-              );
-            }
-            return response.json();
-          })
-          .then((data) => {
-            tokenData = data;
-            tokenItems.innerHTML = ""; // Clear loading message
-
-            // Extract fields and display them
-            const ownerName = data.owner_name || "Unknown Owner";
-            const keyId = data.key_id || "Unknown Key";
-            const listItem = document.createElement("li");
-            listItem.textContent = `${ownerName} - ${keyId}`;
-            tokenItems.appendChild(listItem);
-
-            checkRegStatus();
-          })
-          .catch((error) => {
-            console.error("Error fetching tokens:", error);
-            tokenItems.innerHTML = `<li>Error loading tokens: ${error.message}</li>`;
-          });
-      }
-
-      function checkRegStatus() {
-        const registerButton = document.getElementById("register");
-
-        // Check if tokenData exists
-        if (!tokenData || !tokenData.reg_id) {
-          console.log("No reg_id found in token data.");
-          registerButton.disabled = false;
-          registerButton.style.display = "inline-block";
-          return; // Do nothing if reg_id is null or tokenData is not loaded
-        }
-
-        const regId = tokenData.reg_id;
-
-        fetch("/reg-status", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ reg_id: regId }), // Send reg_id
-        })
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.status === "success") {
-              // Add a message indicating the token is registered
-              const tokenList = document.getElementById("token-list");
-              const registeredMessage = document.createElement("p");
-              registeredMessage.textContent = "Token is registered.";
-              registeredMessage.style.color = "green"; // Optional: Add some styling
-              tokenList.appendChild(registeredMessage);
-            } else {
-              console.log("Registration status check failed.");
-              registerButton.disabled = false;
-              registerButton.style.display = "inline-block";
-            }
-          })
-          .catch((error) => {
-            console.error("Error checking registration status:", error);
-          });
-      }
-
-      function registerToken() {
-        if (!tokenData || tokenData.length === 0) {
-          alert("No tokens available to register.");
-          return;
-        }
-
-        fetch("/generate-challenge", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(tokenData), // Send the token's data
-        })
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.nonce && data.certificate) {
-              // Send data to the /register-token endpoint
-              fetch("http://127.0.0.1:8080/register-token", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  nonce: data.nonce,
-                  certificate: data.certificate,
-                  key_id: data.key_id,
-                }),
-              })
-                .then((response) => response.json())
-                .then((result) => {
-                  if (result.key_id && result.signature && result.timestamp) {
-                    // Pass result to /verify-registration
-                    fetch("/verify-registration", {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({
-                        key_id: result.key_id,
-                        signature: result.signature,
-                        timestamp: result.timestamp,
-                        client_mac: result.client_mac,
-                        client_id: result.client_id,
-                        reg_id: result.reg_id,
-                      }),
-                    })
-                      .then((response) => response.json())
-                      .then((verifyResult) => {
-                        if (verifyResult.status === "success") {
-                          // Call PATCH on /register-token with reg_id
-                          fetch("http://127.0.0.1:8080/register-token", {
-                            method: "PATCH",
-                            headers: {
-                              "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({
-                              reg_id: verifyResult.reg_id,
-                            }),
-                          })
-                            .then((response) => response.json())
-                            .then((patchResult) => {
-                              if (patchResult.status === "success") {
-                                // Call PATCH on /verify-registration with reg_id
-                                fetch("/verify-registration", {
-                                  method: "PATCH",
-                                  headers: {
-                                    "Content-Type": "application/json",
-                                  },
-                                  body: JSON.stringify({
-                                    reg_id: patchResult.reg_id,
-                                  }),
-                                })
-                                  .then((response) => response.json())
-                                  .then((finalVerifyResult) => {
-                                    if (
-                                      finalVerifyResult.status === "success"
-                                    ) {
-                                      alert(
-                                        "Registration successfully completed."
-                                      );
-                                    } else {
-                                      console.error(
-                                        "Final verification failed:",
-                                        finalVerifyResult.message
-                                      );
-                                      alert(
-                                        "Final verification failed. Please try again."
-                                      );
-                                    }
-                                  })
-                                  .catch((error) => {
-                                    console.error(
-                                      "Error in final verification:",
-                                      error
-                                    );
-                                    alert(
-                                      "An error occurred during final verification. Please try again."
-                                    );
-                                  });
-                              } else {
-                                console.error(
-                                  "Error: Failed to update registration:",
-                                  patchResult.message
-                                );
-                                alert("Failed to update registration.");
-                              }
-                            })
-                            .catch((error) => {
-                              console.error(
-                                "Error updating registration with PATCH:",
-                                error
-                              );
-                              alert(
-                                "An error occurred while updating registration. Please try again."
-                              );
-                            });
-                        } else {
-                          console.error(
-                            "Registration verification failed:",
-                            verifyResult.message
-                          );
-                          alert("Registration verification failed.");
-                        }
-                      })
-                      .catch((error) => {
-                        console.error("Error verifying registration:", error);
-                        alert(
-                          "An error occurred during verification. Please try again."
-                        );
-                      });
-                  } else {
-                    console.error(
-                      "Error: Missing required data from /register-token response"
-                    );
-                    alert("Failed to process registration. Please try again.");
-                  }
-                })
-                .catch((error) => {
-                  console.error(
-                    "Error sending data to /register-token:",
-                    error
-                  );
-                  alert("An error occurred. Please try again.");
-                });
-            } else {
-              alert(
-                "Response from /generate-challenge is missing nonce or certificate."
-              );
-            }
-          })
-          .catch((error) => {
-            console.error("Error registering token:", error);
-            alert("An error occurred. Please try again.");
-          });
-      }
-
-      window.addEventListener("DOMContentLoaded", loadTokens);
-      document
-        .getElementById("register")
-        .addEventListener("click", registerToken);
-    </script>
   </body>
 </html>
