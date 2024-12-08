@@ -124,6 +124,9 @@ def return_verify():
 def reg_status():
     reg_id = request.json.get("reg_id")
 
+    if not reg_id:
+        return jsonify({"status": "failure"}), 403
+
     status = check_reg_status(reg_id)
 
     if status:
@@ -205,7 +208,7 @@ def verify_registration():
             return jsonify({"error": f"Error loading public key: {str(e)}"}), 500
 
         # Recreate the combined data that was signed
-        combined_data = (nonce + owner_name + timestamp).encode('utf-8')
+        combined_data = (nonce + owner_name + timestamp + key_id + client_id).encode('utf-8')
 
         # Decode the received signature from hex
         signature = binascii.unhexlify(signature_hex)

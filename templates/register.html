@@ -60,7 +60,7 @@
           })
           .catch((error) => {
             console.error("Error fetching tokens:", error);
-            tokenItems.innerHTML = `<li>Error loading tokens: ${error.message}</li>`;
+            tokenItems.innerHTML = `<li>Unable to find DSC Token</li>`;
           });
       }
 
@@ -91,9 +91,18 @@
               const tokenList = document.getElementById("token-list");
               const registeredMessage = document.createElement("p");
               registeredMessage.textContent = "Token is registered.";
-              registeredMessage.style.color = "green"; // Optional: Add some styling
+              registeredMessage.style.color = "green";
               tokenList.appendChild(registeredMessage);
             } else {
+              fetch("http://127.0.0.1:8080/list-token", {
+                method: "PATCH",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  reg_id: regId,
+                }),
+              });
               console.log("Registration status check failed.");
               registerButton.disabled = false;
               registerButton.style.display = "inline-block";
@@ -264,6 +273,12 @@
       document
         .getElementById("register")
         .addEventListener("click", registerToken);
+
+      const originalAlert = window.alert;
+      window.alert = function (message) {
+        originalAlert(message);
+        location.reload();
+      };
     </script>
   </body>
 </html>
