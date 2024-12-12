@@ -39,6 +39,16 @@ def init_db():
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS messages (
+                msg_id TEXT PRIMARY KEY,
+                msg_content TEXT NOT NULL,
+                key_id TEXT,
+                signature TEXT,
+                ip_address TEXT
+            )
+        ''')
+
         conn.commit()  # Commit the transaction
     except sqlite3.Error as e:
         if conn:
@@ -78,6 +88,7 @@ def store_registration_data(unique_id, key_id, owner_name, certificate, public_k
         if conn:
             conn.rollback()
         print(f"Database error: {e}")
+        clear_junk_registration(unique_id)
         raise
     finally:
         if conn:
@@ -103,6 +114,47 @@ def check_reg_status(reg_id):
 
     return status
 
+def clear_junk_registration(reg_id):
+    try:
+        conn = sqlite3.connect('signData.db')  # Connect to SQLite database
+        cursor = conn.cursor()
+
+        conn.execute("BEGIN")
+        
+        cursor.execute("""
+            DELETE FROM registered_tokens
+            WHERE reg_id = ?
+        """,(reg_id,))
+
+        # Commit the transaction to save changes
+        conn.commit()
+    except sqlite3.Error as e:
+        if conn:
+            conn.rollback()
+        print(f"Database error: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def store_message_data(message):
+    try:
+        conn = sqlite3.connect('signData.db')  # Connect to SQLite database
+        cursor = conn.cursor()
+
+        msg_id = base64.b64encode((secrets.token_hex(16)).encode('utf-8')).decode('utf-8')
+
+        conn.execute("BEGIN")
+        cursor.execute('INSERT INTO messages (msg_id, msg_content) VALUES (?, ?)', (msg_id, message,))
+        conn.commit()
+    except sqlite3.Error as e:
+        if conn:
+            conn.rollback()
+        print(f"Database error: {e}")
+        raise
+    finally:
+        if conn:
+            conn.close()
+
 # Route to serve the client-side script
 @app.route('/')
 def return_index():
@@ -112,9 +164,9 @@ def return_index():
 def return_register():
     return render_template('register.html')
 
-@app.route('/sign')
-def return_sign():
-    return render_template('sign.html')
+@app.route('/save-edit')
+def return_save_edit():
+    return render_template('save_edit.html')
 
 @app.route('/verify')
 def return_verify():
@@ -273,6 +325,33 @@ def update_verification_status():
         return jsonify({"error": str(e)}), 500
     finally:
         session.pop(reg_id, None)
+
+@app.route('/save-message', methods=['POST'])
+def save_message():
+    # Save the new message to the database
+    message = request.form.get('message')
+    if not message:
+        return jsonify({"status": "failure", "message": "No message provided."}), 400
+    
+    try:
+        store_message_data(message)
+
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        return jsonify({"status": "failure", "message": f"Error: {str(e)}"}), 500
+    
+@app.route('/load-saved-messages', methods=['GET'])
+def load_saved_messages():
+    try:
+        conn = sqlite3.connect('signData.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT msg_content FROM messages')
+        messages = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return jsonify(messages), 200
+    except Exception as e:
+        print(f"Error loading messages: {e}")
+        return jsonify({"error": "Unable to load messages"}), 500
 
 @app.before_request
 def cleanup_session():
