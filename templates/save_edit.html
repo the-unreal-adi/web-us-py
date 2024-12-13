@@ -113,7 +113,7 @@
   <body>
     <h1>Save and Edit</h1>
     <div id="form-container">
-      <form id="messageForm" method="POST" action="/save-message">
+      <form id="messageForm">
         <label for="message">Message:</label>
         <textarea
           id="message"
@@ -138,20 +138,29 @@
     <script>
       // Fetch saved messages from the server
       async function loadSavedMessages() {
+        const messageList = document.getElementById("messageList");
+        messageList.innerHTML = "<li>Loading messages...</li>"; // Show loading
+
         try {
           const response = await fetch("/load-saved-messages");
           if (response.ok) {
             const messages = await response.json();
-            const messageList = document.getElementById("messageList");
+            messageList.innerHTML = ""; // Clear existing list
 
-            // Clear the existing list
-            messageList.innerHTML = "";
-
-            // Populate the list with messages
             if (messages.length > 0) {
               messages.forEach((msg) => {
                 const li = document.createElement("li");
-                li.textContent = msg;
+                li.textContent = msg.msg_content;
+                li.dataset.msgId = msg.msg_id;
+
+                const editButton = document.createElement("button");
+                editButton.textContent = "Edit";
+                editButton.style.marginLeft = "10px";
+                editButton.addEventListener("click", () =>
+                  editMessage(msg.msg_id, msg.msg_content)
+                );
+
+                li.appendChild(editButton);
                 messageList.appendChild(li);
               });
             } else {
@@ -162,15 +171,81 @@
           }
         } catch (error) {
           console.error("Error fetching messages:", error);
+          messageList.innerHTML = "<li>Failed to load messages.</li>";
         }
       }
+
+      function editMessage(msgId, msgContent) {
+        // Populate the textarea with the message content
+        const messageTextarea = document.getElementById("message");
+        messageTextarea.value = msgContent;
+
+        // Store the message ID and original content in the textarea's dataset
+        messageTextarea.dataset.msgId = msgId;
+        messageTextarea.dataset.original = msgContent; // Store the original content
+      }
+
+      document
+        .getElementById("messageForm")
+        .addEventListener("submit", async function (e) {
+          e.preventDefault();
+
+          const messageTextarea = document.getElementById("message");
+          const message = messageTextarea.value.trim(); // Get the trimmed value
+          const originalMessage = messageTextarea.dataset.original || ""; // Get the original value
+          const msgId = messageTextarea.dataset.msgId || null; // Check if editing
+
+          // Check if the message is unchanged
+          if (msgId && message === originalMessage) {
+            alert("No changes were made to the message.");
+            return; // Stop the submission
+          }
+
+          if (!message) {
+            alert("Message cannot be empty!");
+            return; // Stop submission if message is empty
+          }
+
+          const url = msgId ? `/save-message/${msgId}` : "/save-message"; // Decide endpoint
+          const method = msgId ? "PATCH" : "POST"; // Decide method
+
+          try {
+            const response = await fetch(url, {
+              method: method,
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ message }),
+            });
+
+            if (response.ok) {
+              alert(
+                msgId
+                  ? "Message updated successfully!"
+                  : "Message saved successfully!"
+              );
+              messageTextarea.value = ""; // Clear the textarea
+              delete messageTextarea.dataset.msgId; // Clear edit mode
+              delete messageTextarea.dataset.original; // Clear original value
+              loadSavedMessages(); // Reload messages
+            } else {
+              const error = await response.json();
+              alert(
+                `Error: ${error.message || "An unexpected error occurred."}`
+              );
+            }
+          } catch (err) {
+            console.error("Error saving message:", err);
+          }
+        });
 
       // Reset button functionality
       document
         .getElementById("resetBtn")
         .addEventListener("click", function (e) {
-          e.preventDefault();
-          document.getElementById("message").value = "";
+          e.preventDefault(); // Prevent default reset behavior
+
+          const messageTextarea = document.getElementById("message");
+          messageTextarea.value = ""; // Clear the textarea
+          delete messageTextarea.dataset.msgId; // Clear edit mode
         });
 
       // Load messages when the page is ready

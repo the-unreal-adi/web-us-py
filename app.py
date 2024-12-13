@@ -45,6 +45,7 @@ def init_db():
                 msg_content TEXT NOT NULL,
                 key_id TEXT,
                 signature TEXT,
+                timestamp TEXT,
                 ip_address TEXT
             )
         ''')
@@ -154,6 +155,43 @@ def store_message_data(message):
     finally:
         if conn:
             conn.close()
+
+def update_message_data(msg_id, message):
+    try:
+        conn = sqlite3.connect('signData.db')  # Connect to SQLite database
+        cursor = conn.cursor()
+
+        conn.execute("BEGIN")
+        cursor.execute('UPDATE messages SET msg_content = ? WHERE msg_id = ?', (message, msg_id))
+
+        if cursor.rowcount == 0:
+            raise sqlite3.Error("Error updating message data: No matching msg_id found.")
+        
+        conn.commit()
+    except sqlite3.Error as e:
+        if conn:
+            conn.rollback()
+        print(f"Database error: {e}")
+        raise
+    finally:
+        if conn:
+            conn.close()
+
+def load_message_data():
+    messages = None
+    try:
+        conn = sqlite3.connect('signData.db')  # Connect to SQLite database
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT msg_id, msg_content FROM messages')
+        messages = [{"msg_id": row[0], "msg_content": row[1]} for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+    finally:
+        if conn:
+            conn.close()
+        return messages
+
 
 # Route to serve the client-side script
 @app.route('/')
@@ -329,7 +367,7 @@ def update_verification_status():
 @app.route('/save-message', methods=['POST'])
 def save_message():
     # Save the new message to the database
-    message = request.form.get('message')
+    message = request.json.get('message')
     if not message:
         return jsonify({"status": "failure", "message": "No message provided."}), 400
     
@@ -340,14 +378,30 @@ def save_message():
     except Exception as e:
         return jsonify({"status": "failure", "message": f"Error: {str(e)}"}), 500
     
+@app.route('/save-message/<msg_id>', methods=['PATCH'])
+def edit_message(msg_id):
+    try:
+        msg_content = request.json.get("message")
+
+        if not msg_content:
+            return jsonify({"error": "Message content is required"}), 400
+
+        update_message_data(msg_id, msg_content)
+
+        return jsonify({"success": True, "message": "Message updated successfully!"}), 200
+    except Exception as e:
+        print(f"Error editing message: {e}")
+        return jsonify({"error": "Failed to update message"}), 500
+
+    
 @app.route('/load-saved-messages', methods=['GET'])
 def load_saved_messages():
     try:
-        conn = sqlite3.connect('signData.db')
-        cursor = conn.cursor()
-        cursor.execute('SELECT msg_content FROM messages')
-        messages = [row[0] for row in cursor.fetchall()]
-        conn.close()
+        messages = load_message_data()
+
+        if not messages:
+            messages = []
+
         return jsonify(messages), 200
     except Exception as e:
         print(f"Error loading messages: {e}")
