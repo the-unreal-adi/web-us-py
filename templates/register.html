@@ -76,13 +76,14 @@
         }
 
         const regId = tokenData.reg_id;
+        const dscKeyId = tokenData.key_id;
 
         fetch("/api/reg-status", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ reg_id: regId }), // Send reg_id
+          body: JSON.stringify({ reg_id: regId, key_id: dscKeyId }), // Send reg_id
         })
           .then((response) => response.json())
           .then((data) => {
