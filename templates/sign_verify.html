@@ -5,24 +5,137 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sign & Verify - Digital Signature</title>
     <style>
-      #token-list {
-        margin-top: 10px;
-        padding: 10px;
-        border: 1px solid #ccc;
-        background-color: #f9f9f9;
-        max-width: 400px;
+      /* General Reset */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
       }
-      #token-list ul {
-        list-style-type: none;
+
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f8f9fa;
+        color: #333;
+        line-height: 1.6;
+        margin: 0;
         padding: 0;
       }
+
+      h1 {
+        text-align: center;
+        margin: 20px 0;
+        font-size: 2rem;
+        color: #0056b3;
+      }
+
+      #token-list,
+      #saved-messages {
+        margin: 20px auto;
+        padding: 20px;
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
+        max-width: 600px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      #token-list h3,
+      #saved-messages h2 {
+        font-size: 1.5rem;
+        color: #333;
+        margin-bottom: 10px;
+        text-align: center;
+      }
+      #token-list ul {
+        list-style: none;
+        padding: 0;
+      }
+
       #token-list li {
-        padding: 5px 0;
+        padding: 10px;
+        font-size: 1rem;
+        text-align: center;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      li {
+        padding: 10px;
+        font-size: 1rem;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      li:last-child {
+        border-bottom: none;
+      }
+
+      p {
+        margin: 10px 0;
+        font-size: 1rem;
+        color: #495057;
+      }
+
+      button {
+        padding: 5px 10px;
+        font-size: 0.9rem;
+        font-weight: bold;
+        color: #fff;
+        background-color: #007bff;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: background-color 0.3s ease, transform 0.2s ease;
+      }
+
+      button:hover {
+        background-color: #0056b3;
+        transform: translateY(-2px);
+      }
+
+      a {
+        color: #007bff;
+        text-decoration: none;
+        transition: color 0.3s ease;
+      }
+
+      a:hover {
+        color: #0056b3;
+        text-decoration: underline;
+      }
+
+      footer {
+        margin-top: 20px;
+        text-align: center;
+        font-size: 0.9rem;
+        color: #6c757d;
+        padding: 10px;
+      }
+
+      #back-to-home {
+        display: block;
+        text-align: center;
+        margin: 10px 0;
+        font-size: 1rem;
+        text-decoration: none;
+        color: #007bff;
+        transition: color 0.3s ease;
+      }
+
+      #back-to-home:hover {
+        color: #0056b3;
+        text-decoration: underline;
       }
     </style>
   </head>
   <body>
     <h1>Sign & Verify</h1>
+    <a href="/" id="back-to-home">Back to Home</a>
     <div id="token-list">
       <h3>Available Token</h3>
       <ul id="token-item"></ul>
@@ -33,277 +146,280 @@
         <li>Loading messages...</li>
       </ul>
     </div>
-  </body>
+    <footer>&copy; 2024 Digital Signature. All Rights Reserved.</footer>
+    <script>
+      let tokenData = null;
+      let allowSigning = false;
 
-  <script>
-    let tokenData = null;
-    let allowSigning = false;
+      async function loadSavedMessages() {
+        const messageList = document.getElementById("messageList");
+        messageList.innerHTML = "<li>Loading messages...</li>"; // Show loading
 
-    async function loadSavedMessages() {
-      const messageList = document.getElementById("messageList");
-      messageList.innerHTML = "<li>Loading messages...</li>"; // Show loading
+        try {
+          const response = await fetch("/api/load-verify-messages");
+          if (response.ok) {
+            const messages = await response.json();
+            messageList.innerHTML = ""; // Clear existing list
 
-      try {
-        const response = await fetch("/api/load-verify-messages");
-        if (response.ok) {
-          const messages = await response.json();
-          messageList.innerHTML = ""; // Clear existing list
+            if (messages.length > 0) {
+              messages.forEach((msg) => {
+                const li = document.createElement("li");
+                li.textContent = msg.msg_content;
+                li.dataset.msgId = msg.msg_id;
 
-          if (messages.length > 0) {
-            messages.forEach((msg) => {
-              const li = document.createElement("li");
-              li.textContent = msg.msg_content;
-              li.dataset.msgId = msg.msg_id;
+                if (msg.signed == "Y" && msg.verified == "Y") {
+                  li.textContent = `| ${li.textContent} | | Signed | | Verified | | Signed by: ${msg.signer} - ${msg.key_id} |`;
+                } else if (msg.signed == "Y" && msg.verified == "N") {
+                  li.textContent = `| ${li.textContent} | | Signed | | Not Verified | | Signed by: ${msg.signer} - ${msg.key_id} |`;
+                  if (allowSigning) {
+                    const signButton = document.createElement("button");
+                    signButton.textContent = "Sign";
+                    signButton.style.marginLeft = "10px";
+                    signButton.addEventListener("click", () =>
+                      signMessage(msg.msg_id)
+                    );
 
-              if (msg.signed == "Y" && msg.verified == "Y") {
-                li.textContent = `| ${li.textContent} | | Signed | | Verified | | Signed by: ${msg.signer} - ${msg.key_id} |`;
-              } else if (msg.signed == "Y" && msg.verified == "N") {
-                li.textContent = `| ${li.textContent} | | Signed | | Not Verified | | Signed by: ${msg.signer} - ${msg.key_id} |`;
-                if (allowSigning) {
-                  const signButton = document.createElement("button");
-                  signButton.textContent = "Sign";
-                  signButton.style.marginLeft = "10px";
-                  signButton.addEventListener("click", () =>
-                    signMessage(msg.msg_id)
-                  );
-
-                  li.appendChild(signButton);
-                }
-              } else {
-                li.textContent = `| ${li.textContent} | | Not Signed |`;
-                if (allowSigning) {
-                  const signButton = document.createElement("button");
-                  signButton.textContent = "Sign";
-                  signButton.style.marginLeft = "10px";
-                  signButton.addEventListener("click", () =>
-                    signMessage(msg.msg_id)
-                  );
-
-                  li.appendChild(signButton);
-                }
-              }
-
-              messageList.appendChild(li);
-            });
-          } else {
-            messageList.innerHTML = "<li>No saved messages yet.</li>";
-          }
-        } else {
-          console.error("Failed to load messages:", response.statusText);
-        }
-      } catch (error) {
-        console.error("Error fetching messages:", error);
-        messageList.innerHTML = "<li>Failed to load messages.</li>";
-      }
-    }
-
-    function signMessage(msgId) {
-      if (!allowSigning) {
-        alert("Token not registered.");
-        return;
-      }
-
-      if (!tokenData || tokenData.length === 0) {
-        alert("No tokens available to register.");
-        return;
-      }
-
-      fetch(`/api/get-message-digest/${msgId}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          reg_id: tokenData.reg_id,
-          key_id: tokenData.key_id,
-        }),
-      })
-        .then((response) => {
-          if (!response.ok) {
-            console.error("Error getting digest:", error);
-            alert("Signing failed. Please try again.");
-          }
-          return response.json();
-        })
-        .then((data) => {
-          if (data.hash && data.reg_id && data.key_id) {
-            fetch(`http://127.0.0.1:8080//single-data-sign`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                hash: data.hash,
-                reg_id: data.reg_id,
-                key_id: data.key_id,
-              }),
-            })
-              .then((response) => {
-                if (!response.ok) {
-                  console.error("Error signing digest:", error);
-                  alert("Signing failed. Please try again.");
-                }
-
-                return response.json();
-              })
-              .then((signData) => {
-                if (
-                  signData.signature &&
-                  signData.timestamp &&
-                  signData.reg_id &&
-                  signData.key_id
-                ) {
-                  fetch(`/api/verify-sign/${msgId}`, {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                      signature: signData.signature,
-                      timestamp: signData.timestamp,
-                      reg_id: signData.reg_id,
-                      key_id: signData.key_id,
-                    }),
-                  })
-                    .then((response) => {
-                      if (response.ok) {
-                        alert("Signing successful.");
-                      } else {
-                        console.error("Verification failed:", error);
-                        alert("Signing failed. Please try again.");
-                      }
-                    })
-                    .catch((error) => {
-                      console.error("Verification failed:", error);
-                      alert("Signing failed. Please try again.");
-                    });
+                    li.appendChild(signButton);
+                  }
                 } else {
-                  console.error("Incomplete signing data.");
-                  alert("Signing failed. Please try again.");
+                  li.textContent = `| ${li.textContent} | | Not Signed |`;
+                  if (allowSigning) {
+                    const signButton = document.createElement("button");
+                    signButton.textContent = "Sign";
+                    signButton.style.marginLeft = "10px";
+                    signButton.addEventListener("click", () =>
+                      signMessage(msg.msg_id)
+                    );
+
+                    li.appendChild(signButton);
+                  }
                 }
-              })
-              .catch((error) => {
-                console.error("Error signing digest:", error);
-                alert("Signing failed. Please try again.");
+
+                messageList.appendChild(li);
               });
-          } else {
-            console.error("Incomplete signing data.");
-            alert("Signing failed. Please try again.");
-          }
-        })
-        .catch((error) => {
-          console.error("Error getting digest:", error);
-          alert("Signing failed. Please try again.");
-        });
-    }
-
-    function loadTokens() {
-      return new Promise((resolve, reject) => {
-        const tokenItems = document.getElementById("token-item");
-        tokenItems.innerHTML = `<li>Loading tokens...</li>`;
-
-        fetch("http://127.0.0.1:8080/list-token")
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error(
-                `Failed to fetch tokens. Status: ${response.status}`
-              );
+            } else {
+              messageList.innerHTML = "<li>No saved messages yet.</li>";
             }
-            return response.json();
-          })
-          .then((data) => {
-            tokenData = data;
-            tokenItems.innerHTML = ""; // Clear loading message
+          } else {
+            console.error("Failed to load messages:", response.statusText);
+          }
+        } catch (error) {
+          console.error("Error fetching messages:", error);
+          messageList.innerHTML = "<li>Failed to load messages.</li>";
+        }
+      }
 
-            // Extract fields and display them
-            const ownerName = data.owner_name || "Unknown Owner";
-            const keyId = data.key_id || "Unknown Key";
-            const listItem = document.createElement("li");
-            listItem.textContent = `${ownerName} - ${keyId}`;
-            tokenItems.appendChild(listItem);
-
-            return checkRegStatus(); // Wait for checkRegStatus to complete
-          })
-          .then(() => resolve()) // Resolve after checkRegStatus completes
-          .catch((error) => {
-            console.error("Error fetching tokens:", error);
-            tokenItems.innerHTML = `<li>Unable to find DSC Token</li>`;
-            reject(error);
-          });
-      });
-    }
-
-    function checkRegStatus() {
-      return new Promise((resolve, reject) => {
-        const tokenList = document.getElementById("token-list");
-        const registeredMessage = document.createElement("p");
-        tokenList.appendChild(registeredMessage);
-
-        // Check if tokenData exists
-        if (!tokenData || !tokenData.reg_id) {
-          console.log("No reg_id found in token data.");
-          registeredMessage.textContent = "Token is not registered.";
-          registeredMessage.style.color = "red";
-          const registerLink = document.createElement("a");
-          registerLink.href = "/register";
-          registerLink.textContent = "Register token here...";
-          registerLink.style.color = "blue";
-          tokenList.appendChild(registerLink);
-          allowSigning = false; // Ensure allowSigning is set to false
-          resolve(); // Resolve even if no token is registered
+      function signMessage(msgId) {
+        if (!allowSigning) {
+          alert("Token not registered.");
           return;
         }
 
-        const regId = tokenData.reg_id;
-        const dscKeyId = tokenData.key_id;
+        if (!tokenData || tokenData.length === 0) {
+          alert("No tokens available to register.");
+          return;
+        }
 
-        fetch("/api/reg-status", {
+        fetch(`/api/get-message-digest/${msgId}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ reg_id: regId, key_id: dscKeyId }), // Send reg_id
+          body: JSON.stringify({
+            reg_id: tokenData.reg_id,
+            key_id: tokenData.key_id,
+          }),
         })
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.status === "success") {
-              registeredMessage.textContent = "Token is registered.";
-              registeredMessage.style.color = "green";
-              allowSigning = true;
-            } else {
-              allowSigning = false; // Set allowSigning explicitly
-              registeredMessage.textContent = "Token is not registered.";
-              registeredMessage.style.color = "red";
-              const registerLink = document.createElement("a");
-              registerLink.href = "/register";
-              registerLink.textContent = "Register token here...";
-              registerLink.style.color = "blue";
-              tokenList.appendChild(registerLink);
-              console.log("Registration status check failed.");
+          .then((response) => {
+            if (!response.ok) {
+              console.error("Error getting digest:", error);
+              alert("Signing failed. Please try again.");
             }
-            resolve(); // Resolve after registration status is checked
+            return response.json();
+          })
+          .then((data) => {
+            if (data.hash && data.reg_id && data.key_id) {
+              fetch(`http://127.0.0.1:8080//single-data-sign`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  hash: data.hash,
+                  reg_id: data.reg_id,
+                  key_id: data.key_id,
+                }),
+              })
+                .then((response) => {
+                  if (!response.ok) {
+                    console.error("Error signing digest:", error);
+                    alert("Signing failed. Please try again.");
+                  }
+
+                  return response.json();
+                })
+                .then((signData) => {
+                  if (
+                    signData.signature &&
+                    signData.timestamp &&
+                    signData.reg_id &&
+                    signData.key_id
+                  ) {
+                    fetch(`/api/verify-sign/${msgId}`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        signature: signData.signature,
+                        timestamp: signData.timestamp,
+                        reg_id: signData.reg_id,
+                        key_id: signData.key_id,
+                      }),
+                    })
+                      .then((response) => {
+                        if (response.ok) {
+                          alert("Signing successful.");
+                        } else {
+                          console.error("Verification failed:", error);
+                          alert("Signing failed. Please try again.");
+                        }
+                      })
+                      .catch((error) => {
+                        console.error("Verification failed:", error);
+                        alert("Signing failed. Please try again.");
+                      });
+                  } else {
+                    console.error("Incomplete signing data.");
+                    alert("Signing failed. Please try again.");
+                  }
+                })
+                .catch((error) => {
+                  console.error("Error signing digest:", error);
+                  alert("Signing failed. Please try again.");
+                });
+            } else {
+              console.error("Incomplete signing data.");
+              alert("Signing failed. Please try again.");
+            }
           })
           .catch((error) => {
-            console.error("Error checking registration status:", error);
-            reject(error); // Reject in case of error
+            console.error("Error getting digest:", error);
+            alert("Signing failed. Please try again.");
+          });
+      }
+
+      function loadTokens() {
+        return new Promise((resolve, reject) => {
+          const tokenItems = document.getElementById("token-item");
+          tokenItems.innerHTML = `<li>Loading tokens...</li>`;
+
+          fetch("http://127.0.0.1:8080/list-token")
+            .then((response) => {
+              if (!response.ok) {
+                throw new Error(
+                  `Failed to fetch tokens. Status: ${response.status}`
+                );
+              }
+              return response.json();
+            })
+            .then((data) => {
+              tokenData = data;
+              tokenItems.innerHTML = ""; // Clear loading message
+
+              // Extract fields and display them
+              const ownerName = data.owner_name || "Unknown Owner";
+              const keyId = data.key_id || "Unknown Key";
+              const listItem = document.createElement("li");
+              listItem.textContent = `${ownerName} - ${keyId}`;
+              tokenItems.appendChild(listItem);
+
+              return checkRegStatus(); // Wait for checkRegStatus to complete
+            })
+            .then(() => resolve()) // Resolve after checkRegStatus completes
+            .catch((error) => {
+              console.error("Error fetching tokens:", error);
+              tokenItems.innerHTML = `<li>Unable to find DSC Token</li>`;
+              reject(error);
+            });
+        });
+      }
+
+      function checkRegStatus() {
+        return new Promise((resolve, reject) => {
+          const tokenList = document.getElementById("token-list");
+          const registeredMessage = document.createElement("p");
+          tokenList.appendChild(registeredMessage);
+
+          // Check if tokenData exists
+          if (!tokenData || !tokenData.reg_id) {
+            console.log("No reg_id found in token data.");
+            registeredMessage.textContent = "Token is not registered.";
+            registeredMessage.style.color = "red";
+            registeredMessage.style.textAlign = "center";
+            const registerLink = document.createElement("a");
+            registerLink.href = "/register";
+            registerLink.textContent = "Register token here...";
+            registerLink.style.color = "blue";
+            tokenList.appendChild(registerLink);
+            allowSigning = false; // Ensure allowSigning is set to false
+            resolve(); // Resolve even if no token is registered
+            return;
+          }
+
+          const regId = tokenData.reg_id;
+          const dscKeyId = tokenData.key_id;
+
+          fetch("/api/reg-status", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ reg_id: regId, key_id: dscKeyId }), // Send reg_id
+          })
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.status === "success") {
+                registeredMessage.textContent = "Token is registered.";
+                registeredMessage.style.color = "green";
+                registeredMessage.style.textAlign = "center";
+                allowSigning = true;
+              } else {
+                allowSigning = false; // Set allowSigning explicitly
+                registeredMessage.textContent = "Token is not registered.";
+                registeredMessage.style.color = "red";
+                registeredMessage.style.textAlign = "center";
+                const registerLink = document.createElement("a");
+                registerLink.href = "/register";
+                registerLink.textContent = "Register token here...";
+                registerLink.style.color = "blue";
+                tokenList.appendChild(registerLink);
+                console.log("Registration status check failed.");
+              }
+              resolve(); // Resolve after registration status is checked
+            })
+            .catch((error) => {
+              console.error("Error checking registration status:", error);
+              reject(error); // Reject in case of error
+            });
+        });
+      }
+
+      window.addEventListener("DOMContentLoaded", () => {
+        loadTokens()
+          .catch((err) => {
+            console.error("Error during token loading:", err);
+          })
+          .finally(() => {
+            loadSavedMessages(); // Always called, even if loadTokens fails
           });
       });
-    }
 
-    window.addEventListener("DOMContentLoaded", () => {
-      loadTokens()
-        .catch((err) => {
-          console.error("Error during token loading:", err);
-        })
-        .finally(() => {
-          loadSavedMessages(); // Always called, even if loadTokens fails
-        });
-    });
-
-    const originalAlert = window.alert;
-    window.alert = function (message) {
-      originalAlert(message);
-      location.reload();
-    };
-  </script>
+      const originalAlert = window.alert;
+      window.alert = function (message) {
+        originalAlert(message);
+        location.reload();
+      };
+    </script>
+  </body>
 </html>

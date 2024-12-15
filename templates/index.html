@@ -5,35 +5,68 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Home - Digital Signature</title>
     <style>
-      body {
-        font-family: Arial, sans-serif;
-      }
-      #token-list {
-        margin-top: 10px;
-        padding: 20px;
-        border: 1px solid #ccc;
-        background-color: #f9f9f9;
-        max-width: 400px;
-        border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-      }
-      #token-list ul {
-        list-style-type: none;
-        padding: 0;
+      /* General Reset */
+      * {
         margin: 0;
+        padding: 0;
+        box-sizing: border-box;
       }
+
+      body {
+        font-family: "Arial", sans-serif;
+        background-color: #f8f9fa;
+        color: #333;
+        margin: 0;
+        padding: 0;
+        line-height: 1.6;
+      }
+
+      h1 {
+        text-align: center;
+        margin: 20px 0;
+        font-size: 2rem;
+        color: #212529;
+      }
+
+      #token-list {
+        margin: 20px auto;
+        padding: 20px;
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
+        max-width: 400px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+
+      #token-list ul {
+        list-style: none;
+      }
+
       #token-list li {
-        padding: 10px 0;
-        font-size: 16px;
+        margin: 15px 0;
+        text-align: center;
       }
+
       #token-list a {
         text-decoration: none;
         color: #007bff;
-        font-weight: bold;
+        font-weight: 500;
+        font-size: 1.1rem;
+        transition: color 0.3s ease, transform 0.2s ease;
       }
+
       #token-list a:hover {
         color: #0056b3;
+        transform: translateY(-2px);
         text-decoration: underline;
+      }
+
+      footer {
+        margin-top: 20px;
+        text-align: center;
+        font-size: 0.9rem;
+        color: #6c757d;
+        padding: 10px;
       }
     </style>
   </head>
@@ -46,5 +79,6 @@
         <li><a href="/sign-verify">Sign & Verify</a></li>
       </ul>
     </div>
+    <footer>&copy; 2024 Digital Signature. All Rights Reserved.</footer>
   </body>
 </html>

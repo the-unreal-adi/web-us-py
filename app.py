@@ -277,8 +277,8 @@ def load_verify_message_data():
         cursor.execute('SELECT msg_id, msg_content, last_updated FROM messages WHERE signature IS NULL ORDER BY last_updated DESC')
         unsigned_messages = [{"msg_id": row[0], "msg_content": row[1], "created_updated_on": row[2], "signed": "N", "verified": "N"} for row in cursor.fetchall()]
         
-        cursor.execute('SELECT msg_id, msg_content, last_updated, key_id, signature, signer, sign_timestamp FROM messages WHERE signature IS NOT NULL ORDER BY key_id, last_updated DESC')
-        signed_messages = [{"msg_id": row[0], "msg_content": row[1], "created_updated_on": row[2], "key_id": row[3], "signature": row[4], "signer": row[5], "signed_on": row[6], "signed": "Y", "verified": "N"} for row in cursor.fetchall()]
+        cursor.execute('SELECT msg_id, msg_content, last_updated, key_id, signature, signer, sign_timestamp, ip_address FROM messages WHERE signature IS NOT NULL ORDER BY key_id, last_updated DESC')
+        signed_messages = [{"msg_id": row[0], "msg_content": row[1], "created_updated_on": row[2], "key_id": row[3], "signature": row[4], "signer": row[5], "signed_on": row[6], "ip": row[7], "signed": "Y", "verified": "N"} for row in cursor.fetchall()]
 
         public_key = None
         current_key_id = None 
@@ -289,13 +289,14 @@ def load_verify_message_data():
             msg_id = msg.get("msg_id")
             msg_content = msg.get("msg_content")
             created_updated_on = msg.get("created_updated_on")
+            ip = msg.get("ip")
 
             if key_id != current_key_id:
                 public_key, owner_name = fetch_public_key_signer(key_id)
                 current_key_id = key_id
 
             if public_key: 
-                digest_hex = create_sha256_digest([msg_id, msg_content, created_updated_on])
+                digest_hex = create_sha256_digest([msg_id, msg_content, created_updated_on, ip])
                 if digest_hex:
                     if verify_signature(public_key, signature, digest_hex, timestamp):
                         msg["verified"] = "Y"
@@ -328,13 +329,13 @@ def get_digest_components(msg_id):
             conn.close()
         return components
     
-def store_message_signature(msg_id, key_id, signature, signer, timestamp):
+def store_message_signature(msg_id, key_id, signature, signer, timestamp, ip_addr):
     try:
         conn = sqlite3.connect('signData.db')  # Connect to SQLite database
         cursor = conn.cursor()
 
         conn.execute("BEGIN")
-        cursor.execute('UPDATE messages SET key_id = ?, signature = ?, signer = ?, sign_timestamp = ? WHERE msg_id = ?', (key_id, signature, signer, timestamp, msg_id))
+        cursor.execute('UPDATE messages SET key_id = ?, signature = ?, signer = ?, sign_timestamp = ?, ip_address = ? WHERE msg_id = ?', (key_id, signature, signer, timestamp, ip_addr, msg_id))
 
         if cursor.rowcount == 0:
             raise sqlite3.Error(f"Error storing signature for msg_id {e}.")
@@ -576,6 +577,7 @@ def get_message_digest(msg_id):
     try:
         reg_id = request.json.get('reg_id')
         key_id = request.json.get('key_id')
+        client_ip = request.remote_addr
 
         if not all([reg_id, key_id]):
             return jsonify({"error": "Incomplete data to generate message digest"}), 400
@@ -588,12 +590,15 @@ def get_message_digest(msg_id):
         if not components:
             return jsonify({"error": "Unable to fetch digest components."}), 404
         
+        components.append(client_ip) 
+        
         digest = create_sha256_digest(components)
         if not digest:
             return jsonify({"error": "Unable to create digest."}), 404
         
         session[msg_id] = {
             "components": components,
+            "ip": client_ip,
             "stimestamp": time.time()
         }
         
@@ -626,7 +631,8 @@ def verify_store_signature(msg_id):
             return jsonify({"error": "Message ID not found in session"}), 404
         
         components = sign_data.get("components")
-
+        ip_addr = sign_data.get("ip")
+ 
         digest = create_sha256_digest(components)
         if not digest:
             return jsonify({"error": "Unable to create digest."}), 404
@@ -636,7 +642,7 @@ def verify_store_signature(msg_id):
         if not status:
             return jsonify({"error": "Unable to verify signature"}), 404
         
-        store_message_signature(msg_id, key_id, signature, signer, timestamp)
+        store_message_signature(msg_id, key_id, signature, signer, timestamp, ip_addr)
 
         return jsonify({"status": "success"}), 200
     except Exception as e:

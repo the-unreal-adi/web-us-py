@@ -5,48 +5,56 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Save and Edit - Digital Signature</title>
     <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
       body {
         font-family: Arial, sans-serif;
-        margin: 0;
-        padding: 20px;
-        background-color: #f9f9f9;
+        background-color: #f8f9fa;
         color: #333;
+        line-height: 1.6;
+        margin: 0;
+        padding: 0;
       }
 
       h1 {
         text-align: center;
+        margin: 20px 0;
+        font-size: 2rem;
         color: #0056b3;
-        margin-bottom: 20px;
       }
 
       #form-container {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
         max-width: 600px;
-        margin: 0 auto;
+        margin: 20px auto;
         background: #fff;
-        border: 1px solid #ccc;
-        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
         padding: 30px;
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
       }
 
       label {
-        font-size: 16px;
+        font-size: 1rem;
         font-weight: bold;
         margin-bottom: 10px;
+        display: block;
+        color: #495057;
       }
 
       textarea {
         width: 100%;
         height: 150px;
-        font-size: 16px;
+        font-size: 1rem;
         border: 1px solid #ccc;
-        border-radius: 4px;
+        border-radius: 5px;
         resize: none;
         background-color: #f9f9f9;
         margin-bottom: 20px;
+        padding: 10px;
       }
 
       textarea:focus {
@@ -57,19 +65,20 @@
 
       .buttons {
         display: flex;
+        justify-content: space-between;
         gap: 15px;
       }
 
       button {
-        padding: 12px 20px;
-        font-size: 16px;
+        padding: 10px 20px;
+        font-size: 1rem;
         font-weight: bold;
         color: #fff;
         background-color: #007bff;
         border: none;
-        border-radius: 4px;
+        border-radius: 5px;
         cursor: pointer;
-        transition: background-color 0.3s ease;
+        transition: background-color 0.3s ease, transform 0.2s ease;
       }
 
       button#resetBtn {
@@ -78,6 +87,7 @@
 
       button:hover {
         background-color: #0056b3;
+        transform: translateY(-2px);
       }
 
       button#resetBtn:hover {
@@ -85,33 +95,82 @@
       }
 
       #saved-messages {
-        margin-top: 30px;
-        padding: 25px;
-        border: 1px solid #ccc;
+        max-width: 600px;
+        margin: 30px auto;
+        padding: 20px;
         background-color: #fff;
-        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
       }
 
+      #saved-messages h2 {
+        font-size: 1.5rem;
+        color: #333;
+        margin-bottom: 10px;
+      }
+
       #saved-messages ul {
-        list-style-type: none;
+        list-style: none;
         padding: 0;
         margin: 0;
       }
 
       #saved-messages li {
-        padding: 12px 0;
-        font-size: 18px;
-        border-bottom: 1px solid #eee;
+        padding: 10px;
+        font-size: 1rem;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
       }
 
       #saved-messages li:last-child {
         border-bottom: none;
       }
+
+      #saved-messages button {
+        padding: 5px 10px;
+        font-size: 0.9rem;
+        color: #fff;
+        background-color: #007bff;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: background-color 0.3s ease;
+      }
+
+      #saved-messages button:hover {
+        background-color: #0056b3;
+      }
+
+      footer {
+        margin-top: 20px;
+        text-align: center;
+        font-size: 0.9rem;
+        color: #6c757d;
+        padding: 10px;
+      }
+
+      #back-to-home {
+        display: block;
+        text-align: center;
+        margin: 10px 0;
+        font-size: 1rem;
+        text-decoration: none;
+        color: #007bff;
+        transition: color 0.3s ease;
+      }
+
+      #back-to-home:hover {
+        color: #0056b3;
+        text-decoration: underline;
+      }
     </style>
   </head>
   <body>
     <h1>Save and Edit</h1>
+    <a href="/" id="back-to-home">Back to Home</a>
     <div id="form-container">
       <form id="messageForm">
         <label for="message">Message:</label>
@@ -135,6 +194,7 @@
         <li>Loading messages...</li>
       </ul>
     </div>
+    <footer>&copy; 2024 Digital Signature. All Rights Reserved.</footer>
     <script>
       // Fetch saved messages from the server
       async function loadSavedMessages() {
