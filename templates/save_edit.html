@@ -142,7 +142,7 @@
         messageList.innerHTML = "<li>Loading messages...</li>"; // Show loading
 
         try {
-          const response = await fetch("/load-saved-messages");
+          const response = await fetch("/api/load-saved-messages");
           if (response.ok) {
             const messages = await response.json();
             messageList.innerHTML = ""; // Clear existing list
@@ -206,7 +206,9 @@
             return; // Stop submission if message is empty
           }
 
-          const url = msgId ? `/save-message/${msgId}` : "/save-message"; // Decide endpoint
+          const url = msgId
+            ? `/api/save-message/${msgId}`
+            : "/api/save-message"; // Decide endpoint
           const method = msgId ? "PATCH" : "POST"; // Decide method
 
           try {

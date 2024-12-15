@@ -34,41 +34,17 @@ def create_sha256_digest(components):
         print(f"Error: {e}")
         return None
     
-def base_64_decode(data):
-    try:
-        base64_bytes = base64.b64decode(data, validate=True)
-        return binascii.hexlify(base64_bytes).decode('utf-8')  # Convert to Hex string
-    except Exception:
-        return data
-
-def base_64_encode(data):
-    try:
-        hex_bytes = binascii.unhexlify(data)
-        return base64.b64encode(hex_bytes).decode('utf-8')
-    except Exception:
-        return data
-
-def verify_signature(public_key, signature, components, timestamp):
+def verify_signature(public_key, signature, digest_hex, timestamp):
     """
     Verify a digital signature using RSA-PKCS#1 v1.5 and SHA-256.
     """
     try:
-        if not all([public_key, signature, components, timestamp]):
+        if not all([public_key, signature, digest_hex, timestamp]):
             raise ValueError("Insufficient verification data")
-        
-        if not isinstance(components, list):
-            raise TypeError("Components must be a list.")
-        
-        digest_hex = create_sha256_digest(components)
-        if not digest_hex:
-            raise ValueError("Digest creation failed")
-        
-        public_key_hex = base_64_decode(public_key)
-        signature_hex = base_64_decode(signature)
-
+    
         try:
             # Convert hex-encoded DER public key to bytes and load it
-            public_key_der = binascii.unhexlify(public_key_hex)
+            public_key_der = binascii.unhexlify(public_key)
             public_key_final = serialization.load_der_public_key(public_key_der, backend=default_backend())
         except ValueError as e:
             raise
@@ -77,7 +53,7 @@ def verify_signature(public_key, signature, components, timestamp):
         combined_data = (digest_hex + timestamp).encode('utf-8')
 
         # Decode the received signature from hex
-        signature_final = binascii.unhexlify(signature_hex)
+        signature_final = binascii.unhexlify(signature)
 
         try:
             # Verify the signature using RSA-PKCS1 v1.5 padding with SHA-256
@@ -87,10 +63,9 @@ def verify_signature(public_key, signature, components, timestamp):
                 padding=padding.PKCS1v15(),  # PKCS#1 v1.5 padding
                 algorithm=hashes.SHA256()  # Explicitly specify the hash algorithm
             )  
+            return True
         except Exception as e:
-            raise 
-
-        return True
+            raise Exception("Signature verification failed.") 
     except Exception as e:
         print(f"Error: {e}")
         return False
@@ -128,6 +103,7 @@ def init_db():
                 last_updated TEXT NOT NULL,
                 key_id TEXT,
                 signature TEXT,
+                signer TEXT,
                 sign_timestamp TEXT,
                 ip_address TEXT
             )
@@ -148,13 +124,6 @@ def store_registration_data(unique_id, key_id, owner_name, certificate, public_k
     All fields except the ID are stored in Base64 format. The ID is derived from a hash of provided components.
     """
     try:
-        # Convert fields to Base64
-        certificate_base64 = base64.b64encode(certificate.encode('utf-8')).decode('utf-8')
-        public_key_base64 = base64.b64encode(public_key.encode('utf-8')).decode('utf-8')
-        signature_base64 = base64.b64encode(binascii.unhexlify(signature)).decode('utf-8')
-        nonce_base64 = base64.b64encode(nonce.encode('utf-8')).decode('utf-8')
-        key_id_base64 = base64.b64encode(key_id.encode('utf-8')).decode('utf-8')
-
         conn = sqlite3.connect('signData.db')  # Connect to SQLite database
         cursor = conn.cursor()
 
@@ -165,7 +134,7 @@ def store_registration_data(unique_id, key_id, owner_name, certificate, public_k
         cursor.execute('''
             INSERT INTO registered_tokens (reg_id, key_id, owner_name, certificate, public_key, nonce, signature, client_id, client_mac, client_ip, timestamp, last_signed)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (unique_id, key_id_base64, owner_name, certificate_base64, public_key_base64, nonce_base64, signature_base64, client_id, client_mac, client_ip, timestamp, timestamp,))
+        ''', (unique_id, key_id, owner_name, certificate, public_key, nonce, signature, client_id, client_mac, client_ip, timestamp, timestamp,))
 
         conn.commit()  # Commit the transaction
     except sqlite3.Error as e:
@@ -185,9 +154,7 @@ def check_reg_status(reg_id, key_id):
         conn = sqlite3.connect('signData.db')  
         cursor = conn.cursor()
 
-        key_id_base64 = base64.b64encode(key_id.encode('utf-8')).decode('utf-8')
-
-        cursor.execute("SELECT * FROM registered_tokens WHERE reg_id = ? AND key_id = ?", (reg_id, key_id_base64,))
+        cursor.execute("SELECT * FROM registered_tokens WHERE reg_id = ? AND key_id = ?", (reg_id, key_id,))
         result = cursor.fetchone()
 
         if result:
@@ -281,27 +248,25 @@ def load_message_data():
             conn.close()
         return messages
 
-def fetch_public_key(key_id):
+def fetch_public_key_signer(key_id):
     public_key = None
-
+    owner_name = None
     try:
         conn = sqlite3.connect('signData.db')  
         cursor = conn.cursor()
 
-        key_id_base64 = base_64_encode(key_id)
-
-        cursor.execute("SELECT public_key FROM registered_tokens WHERE key_id = ?", (key_id_base64,))
+        cursor.execute("SELECT public_key, owner_name FROM registered_tokens WHERE key_id = ?", (key_id,))
         result = cursor.fetchone()
 
         if result:
             public_key = str(result[0])
+            owner_name = str(result[1])
     except sqlite3.Error as e:
         print(f"Database error: {e}")
     finally:
         if conn:
             conn.close()
-
-    return public_key
+        return public_key, owner_name
 
 def load_verify_message_data():
     messages = []
@@ -309,14 +274,14 @@ def load_verify_message_data():
         conn = sqlite3.connect('signData.db')  # Connect to SQLite database
         cursor = conn.cursor()
 
-        cursor.execute('SELECT msg_id, msg_content, last_updated FROM messages WHERE signature IS NULL')
+        cursor.execute('SELECT msg_id, msg_content, last_updated FROM messages WHERE signature IS NULL ORDER BY last_updated DESC')
         unsigned_messages = [{"msg_id": row[0], "msg_content": row[1], "created_updated_on": row[2], "signed": "N", "verified": "N"} for row in cursor.fetchall()]
-
-        cursor.execute('SELECT msg_id, msg_content, last_updated, key_id, signature, sign_timestamp FROM messages WHERE signature IS NOT NULL ORDER BY key_id')
-        signed_messages = [{"msg_id": row[0], "msg_content": row[1], "created_updated_on": row[2], "key_id": row[3], "signature": row[4], "signed_on": row[5], "signed": "Y", "verified": "N"} for row in cursor.fetchall()]
+        
+        cursor.execute('SELECT msg_id, msg_content, last_updated, key_id, signature, signer, sign_timestamp FROM messages WHERE signature IS NOT NULL ORDER BY key_id, last_updated DESC')
+        signed_messages = [{"msg_id": row[0], "msg_content": row[1], "created_updated_on": row[2], "key_id": row[3], "signature": row[4], "signer": row[5], "signed_on": row[6], "signed": "Y", "verified": "N"} for row in cursor.fetchall()]
 
         public_key = None
-        current_key_id = None
+        current_key_id = None 
         for msg in signed_messages:
             key_id = msg.get("key_id")
             signature = msg.get("signature")
@@ -326,14 +291,14 @@ def load_verify_message_data():
             created_updated_on = msg.get("created_updated_on")
 
             if key_id != current_key_id:
-                public_key = fetch_public_key(key_id)
+                public_key, owner_name = fetch_public_key_signer(key_id)
                 current_key_id = key_id
 
-            if public_key:
-                if verify_signature(public_key, signature, [msg_id, msg_content, created_updated_on], timestamp):
-                    msg["verified"] = "Y"
-            else:
-                msg["signed"] = "N"
+            if public_key: 
+                digest_hex = create_sha256_digest([msg_id, msg_content, created_updated_on])
+                if digest_hex:
+                    if verify_signature(public_key, signature, digest_hex, timestamp):
+                        msg["verified"] = "Y"
 
         messages.extend(unsigned_messages)
         messages.extend(signed_messages)
@@ -355,7 +320,7 @@ def get_digest_components(msg_id):
         result = cursor.fetchone()
 
         if result:
-            components = [str(result[0]), str(result[1]), str(2)]
+            components = [str(result[0]), str(result[1]), str(result[2])]
     except sqlite3.Error as e:
         print(f"Database error: {e}")
     finally:
@@ -363,16 +328,13 @@ def get_digest_components(msg_id):
             conn.close()
         return components
     
-def store_message_signature(msg_id, key_id, signature, timestamp):
+def store_message_signature(msg_id, key_id, signature, signer, timestamp):
     try:
         conn = sqlite3.connect('signData.db')  # Connect to SQLite database
         cursor = conn.cursor()
 
-        key_id_base64 = base64.b64encode(key_id.encode('utf-8')).decode('utf-8')
-        signature_base64 = base64.b64encode(binascii.unhexlify(signature)).decode('utf-8')
- 
         conn.execute("BEGIN")
-        cursor.execute('UPDATE messages SET key_id = ?, signature = ?, sign_timestamp = ? WHERE msg_id = ?', (key_id_base64, signature_base64, timestamp, msg_id))
+        cursor.execute('UPDATE messages SET key_id = ?, signature = ?, signer = ?, sign_timestamp = ? WHERE msg_id = ?', (key_id, signature, signer, timestamp, msg_id))
 
         if cursor.rowcount == 0:
             raise sqlite3.Error(f"Error storing signature for msg_id {e}.")
@@ -655,7 +617,9 @@ def verify_store_signature(msg_id):
         if not status:
             return jsonify({"error": "DSC Token not registered"}), 404
         
-        public_key = fetch_public_key(key_id)
+        public_key, signer = fetch_public_key_signer(key_id)
+        if not public_key:
+            return jsonify({"error": "Public key not found."}), 404
 
         sign_data = session.get(msg_id)
         if not sign_data:
@@ -663,15 +627,22 @@ def verify_store_signature(msg_id):
         
         components = sign_data.get("components")
 
-        status = verify_signature(public_key, signature, components, timestamp)
+        digest = create_sha256_digest(components)
+        if not digest:
+            return jsonify({"error": "Unable to create digest."}), 404
+
+        status = verify_signature(public_key, signature, digest, timestamp)
 
         if not status:
             return jsonify({"error": "Unable to verify signature"}), 404
         
-        store_message_signature(msg_id, key_id, signature, timestamp)
+        store_message_signature(msg_id, key_id, signature, signer, timestamp)
+
+        return jsonify({"status": "success"}), 200
     except Exception as e:
         print(f"Error verifyifying signature: {e}")
         return jsonify({"error": "Unable to verify signature"}), 500
+    
 @app.before_request
 def cleanup_session():
     """

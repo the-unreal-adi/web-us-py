@@ -44,7 +44,7 @@
       messageList.innerHTML = "<li>Loading messages...</li>"; // Show loading
 
       try {
-        const response = await fetch("/load-verify-messages");
+        const response = await fetch("/api/load-verify-messages");
         if (response.ok) {
           const messages = await response.json();
           messageList.innerHTML = ""; // Clear existing list
@@ -56,9 +56,9 @@
               li.dataset.msgId = msg.msg_id;
 
               if (msg.signed == "Y" && msg.verified == "Y") {
-                li.textContent = li.textContent + " Signed and Verified";
+                li.textContent = `| ${li.textContent} | | Signed | | Verified | | Signed by: ${msg.signer} - ${msg.key_id} |`;
               } else if (msg.signed == "Y" && msg.verified == "N") {
-                li.textContent = li.textContent + " Signed and Not Verified";
+                li.textContent = `| ${li.textContent} | | Signed | | Not Verified | | Signed by: ${msg.signer} - ${msg.key_id} |`;
                 if (allowSigning) {
                   const signButton = document.createElement("button");
                   signButton.textContent = "Sign";
@@ -70,7 +70,7 @@
                   li.appendChild(signButton);
                 }
               } else {
-                li.textContent = li.textContent + " Not Signed";
+                li.textContent = `| ${li.textContent} | | Not Signed |`;
                 if (allowSigning) {
                   const signButton = document.createElement("button");
                   signButton.textContent = "Sign";
@@ -102,6 +102,99 @@
         alert("Token not registered.");
         return;
       }
+
+      if (!tokenData || tokenData.length === 0) {
+        alert("No tokens available to register.");
+        return;
+      }
+
+      fetch(`/api/get-message-digest/${msgId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reg_id: tokenData.reg_id,
+          key_id: tokenData.key_id,
+        }),
+      })
+        .then((response) => {
+          if (!response.ok) {
+            console.error("Error getting digest:", error);
+            alert("Signing failed. Please try again.");
+          }
+          return response.json();
+        })
+        .then((data) => {
+          if (data.hash && data.reg_id && data.key_id) {
+            fetch(`http://127.0.0.1:8080//single-data-sign`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                hash: data.hash,
+                reg_id: data.reg_id,
+                key_id: data.key_id,
+              }),
+            })
+              .then((response) => {
+                if (!response.ok) {
+                  console.error("Error signing digest:", error);
+                  alert("Signing failed. Please try again.");
+                }
+
+                return response.json();
+              })
+              .then((signData) => {
+                if (
+                  signData.signature &&
+                  signData.timestamp &&
+                  signData.reg_id &&
+                  signData.key_id
+                ) {
+                  fetch(`/api/verify-sign/${msgId}`, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      signature: signData.signature,
+                      timestamp: signData.timestamp,
+                      reg_id: signData.reg_id,
+                      key_id: signData.key_id,
+                    }),
+                  })
+                    .then((response) => {
+                      if (response.ok) {
+                        alert("Signing successful.");
+                      } else {
+                        console.error("Verification failed:", error);
+                        alert("Signing failed. Please try again.");
+                      }
+                    })
+                    .catch((error) => {
+                      console.error("Verification failed:", error);
+                      alert("Signing failed. Please try again.");
+                    });
+                } else {
+                  console.error("Incomplete signing data.");
+                  alert("Signing failed. Please try again.");
+                }
+              })
+              .catch((error) => {
+                console.error("Error signing digest:", error);
+                alert("Signing failed. Please try again.");
+              });
+          } else {
+            console.error("Incomplete signing data.");
+            alert("Signing failed. Please try again.");
+          }
+        })
+        .catch((error) => {
+          console.error("Error getting digest:", error);
+          alert("Signing failed. Please try again.");
+        });
     }
 
     function loadTokens() {
