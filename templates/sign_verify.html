@@ -81,9 +81,17 @@
         color: #495057;
       }
 
+      #button-container {
+        display: flex;
+        justify-content: center; /* Centers the button horizontally */
+        margin-top: 10px; /* Adds spacing between the list and the button */
+      }
+
       button {
-        padding: 5px 10px;
-        font-size: 0.9rem;
+        display: block; /* Ensures it takes up the full width of its container */
+        margin: auto; /* Centers the button horizontally */
+        padding: 10px 20px; /* Adds appropriate padding */
+        font-size: 1rem;
         font-weight: bold;
         color: #fff;
         background-color: #007bff;
@@ -91,9 +99,15 @@
         border-radius: 5px;
         cursor: pointer;
         transition: background-color 0.3s ease, transform 0.2s ease;
+        align-self: center;
       }
 
-      button:hover {
+      button:disabled {
+        background-color: #6c757d;
+        cursor: not-allowed;
+      }
+
+      button:hover:not(:disabled) {
         background-color: #0056b3;
         transform: translateY(-2px);
       }
@@ -140,6 +154,9 @@
       <h3>Available Token</h3>
       <ul id="token-item"></ul>
     </div>
+    <div id="button-container">
+      <button id="sign" style="display: none" disabled>Sign</button>
+    </div>
     <div id="saved-messages">
       <h2>Saved Messages</h2>
       <ul id="messageList">
@@ -150,6 +167,19 @@
     <script>
       let tokenData = null;
       let allowSigning = false;
+      let forSigning = [];
+
+      function updateSignButtonState() {
+        const signButton = document.getElementById("sign");
+
+        if (forSigning.length > 0) {
+          signButton.disabled = false;
+          signButton.style.display = "inline-block";
+        } else {
+          signButton.disabled = true;
+          signButton.style.display = "none";
+        }
+      }
 
       async function loadSavedMessages() {
         const messageList = document.getElementById("messageList");
@@ -172,26 +202,52 @@
                 } else if (msg.signed == "Y" && msg.verified == "N") {
                   li.textContent = `| ${li.textContent} | | Signed | | Not Verified | | Signed by: ${msg.signer} - ${msg.key_id} |`;
                   if (allowSigning) {
-                    const signButton = document.createElement("button");
-                    signButton.textContent = "Sign";
-                    signButton.style.marginLeft = "10px";
-                    signButton.addEventListener("click", () =>
-                      signMessage(msg.msg_id)
-                    );
+                    const signCheckbox = document.createElement("input");
+                    signCheckbox.type = "checkbox";
+                    signCheckbox.style.marginLeft = "10px";
+                    signCheckbox.id = msg.msg_id; // Setting the checkbox ID
 
-                    li.appendChild(signButton);
+                    signCheckbox.addEventListener("change", (event) => {
+                      if (event.target.checked) {
+                        // If checked, add to forSigning array
+                        if (!forSigning.includes(msg.msg_id)) {
+                          forSigning.push(msg.msg_id);
+                        }
+                      } else {
+                        // If unchecked, remove from forSigning array
+                        forSigning = forSigning.filter(
+                          (id) => id !== msg.msg_id
+                        );
+                      }
+                      updateSignButtonState();
+                    });
+
+                    li.appendChild(signCheckbox);
                   }
                 } else {
                   li.textContent = `| ${li.textContent} | | Not Signed |`;
                   if (allowSigning) {
-                    const signButton = document.createElement("button");
-                    signButton.textContent = "Sign";
-                    signButton.style.marginLeft = "10px";
-                    signButton.addEventListener("click", () =>
-                      signMessage(msg.msg_id)
-                    );
+                    const signCheckbox = document.createElement("input");
+                    signCheckbox.type = "checkbox";
+                    signCheckbox.style.marginLeft = "10px";
+                    signCheckbox.id = msg.msg_id; // Setting the checkbox ID
 
-                    li.appendChild(signButton);
+                    signCheckbox.addEventListener("change", (event) => {
+                      if (event.target.checked) {
+                        // If checked, add to forSigning array
+                        if (!forSigning.includes(msg.msg_id)) {
+                          forSigning.push(msg.msg_id);
+                        }
+                      } else {
+                        // If unchecked, remove from forSigning array
+                        forSigning = forSigning.filter(
+                          (id) => id !== msg.msg_id
+                        );
+                      }
+                      updateSignButtonState();
+                    });
+
+                    li.appendChild(signCheckbox);
                   }
                 }
 
@@ -209,7 +265,7 @@
         }
       }
 
-      function signMessage(msgId) {
+      function signMessages() {
         if (!allowSigning) {
           alert("Token not registered.");
           return;
@@ -220,7 +276,12 @@
           return;
         }
 
-        fetch(`/api/get-message-digest/${msgId}`, {
+        if (!forSigning || forSigning.length === 0) {
+          alert("No data selected for signing.");
+          return;
+        }
+
+        fetch(`/api/get-message-digest`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -228,6 +289,7 @@
           body: JSON.stringify({
             reg_id: tokenData.reg_id,
             key_id: tokenData.key_id,
+            msg_ids: forSigning,
           }),
         })
           .then((response) => {
@@ -239,7 +301,7 @@
           })
           .then((data) => {
             if (data.hash && data.reg_id && data.key_id) {
-              fetch(`http://127.0.0.1:8080//single-data-sign`, {
+              fetch(`http://127.0.0.1:8080//data-sign`, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
@@ -415,11 +477,13 @@
           });
       });
 
-      const originalAlert = window.alert;
+      document.getElementById("sign").addEventListener("click", signMessages);
+
+      /* const originalAlert = window.alert;
       window.alert = function (message) {
         originalAlert(message);
         location.reload();
-      };
+      }; */
     </script>
   </body>
 </html>

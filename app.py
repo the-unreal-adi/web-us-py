@@ -572,42 +572,52 @@ def load_verify_messages():
         print(f"Error loading messages: {e}")
         return jsonify({"error": "Unable to load messages"}), 500
     
-@app.route('/api/get-message-digest/<msg_id>', methods=['POST'])
-def get_message_digest(msg_id):
+@app.route('/api/get-message-digest', methods=['POST'])
+def get_message_digest():
     try:
         reg_id = request.json.get('reg_id')
         key_id = request.json.get('key_id')
+        msg_ids = request.json.get('msg_ids')
         client_ip = request.remote_addr
 
-        if not all([reg_id, key_id]):
+        if not all([reg_id, key_id, msg_ids, client_ip]):
             return jsonify({"error": "Incomplete data to generate message digest"}), 400
+        
+        if not isinstance(msg_ids, list):
+            return jsonify({"error": "msg_ids must be a list"}), 400
         
         status = check_reg_status(reg_id, key_id)
         if not status:
             return jsonify({"error": "DSC Token not registered"}), 404
         
-        components = get_digest_components(msg_id)
-        if not components:
-            return jsonify({"error": "Unable to fetch digest components."}), 404
+        digests = []
+        for msg_id in msg_ids:
+            components = get_digest_components(msg_id)
+            if not components:
+                print(f"Unable to get components for {msg_id}")
+                pass
+            
+            components.append(client_ip) 
+            
+            digest = create_sha256_digest(components)
+            if not digest:
+                print(f"Unable to create digest for {msg_id}")
+                pass
+
+            digests.append({"digest_id": msg_id, "digest_value": digest})
         
-        components.append(client_ip) 
-        
-        digest = create_sha256_digest(components)
-        if not digest:
-            return jsonify({"error": "Unable to create digest."}), 404
-        
-        session[msg_id] = {
-            "components": components,
+        session["sign_"+reg_id] = {
+            "digests": digests,
             "ip": client_ip,
             "stimestamp": time.time()
         }
         
-        return jsonify({"hash": digest, "reg_id": reg_id, "key_id": key_id}), 200
+        return jsonify({"digests": digests, "reg_id": reg_id, "key_id": key_id}), 200
     except Exception as e:
         print(f"Error getting message digest: {e}")
         return jsonify({"error": "Unable to get message digest"}), 500
     
-@app.route('/api/verify-sign/<msg_id>', methods=['POST'])
+@app.route('/api/verify-sign/', methods=['POST'])
 def verify_store_signature(msg_id):
     try:
         reg_id = request.json.get('reg_id')
