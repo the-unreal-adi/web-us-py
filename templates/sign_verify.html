@@ -281,6 +281,15 @@
           return;
         }
 
+        const registeredMessage = document.getElementById("token-status");
+        registeredMessage.textContent = "Signing in Progress...";
+        registeredMessage.style.color = "blue";
+        registeredMessage.style.textAlign = "center";
+
+        const signButton = document.getElementById("sign");
+        signButton.disabled = true;
+        signButton.style.display = "none";
+
         fetch(`/api/get-message-digest`, {
           method: "POST",
           headers: {
@@ -300,14 +309,14 @@
             return response.json();
           })
           .then((data) => {
-            if (data.hash && data.reg_id && data.key_id) {
+            if (data.digests && data.reg_id && data.key_id) {
               fetch(`http://127.0.0.1:8080//data-sign`, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                  hash: data.hash,
+                  digests: data.digests,
                   reg_id: data.reg_id,
                   key_id: data.key_id,
                 }),
@@ -322,19 +331,17 @@
                 })
                 .then((signData) => {
                   if (
-                    signData.signature &&
-                    signData.timestamp &&
+                    signData.signed_digests &&
                     signData.reg_id &&
                     signData.key_id
                   ) {
-                    fetch(`/api/verify-sign/${msgId}`, {
+                    fetch(`/api/verify-sign`, {
                       method: "POST",
                       headers: {
                         "Content-Type": "application/json",
                       },
                       body: JSON.stringify({
-                        signature: signData.signature,
-                        timestamp: signData.timestamp,
+                        signed_digests: signData.signed_digests,
                         reg_id: signData.reg_id,
                         key_id: signData.key_id,
                       }),
@@ -411,6 +418,7 @@
         return new Promise((resolve, reject) => {
           const tokenList = document.getElementById("token-list");
           const registeredMessage = document.createElement("p");
+          registeredMessage.id = "token-status";
           tokenList.appendChild(registeredMessage);
 
           // Check if tokenData exists
@@ -479,11 +487,11 @@
 
       document.getElementById("sign").addEventListener("click", signMessages);
 
-      /* const originalAlert = window.alert;
+      const originalAlert = window.alert;
       window.alert = function (message) {
         originalAlert(message);
         location.reload();
-      }; */
+      };
     </script>
   </body>
 </html>

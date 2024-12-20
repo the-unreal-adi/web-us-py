@@ -618,15 +618,17 @@ def get_message_digest():
         return jsonify({"error": "Unable to get message digest"}), 500
     
 @app.route('/api/verify-sign/', methods=['POST'])
-def verify_store_signature(msg_id):
+def verify_store_signature():
     try:
         reg_id = request.json.get('reg_id')
         key_id = request.json.get('key_id')
-        signature = request.json.get('signature')
-        timestamp = request.json.get('timestamp')
+        signed_digests = request.json.get('signed_digests')
 
-        if not all([reg_id, key_id, signature, timestamp]):
+        if not all([reg_id, key_id, signed_digests]):
             return jsonify({"error": "Incomplete data to verify signature"}), 400
+        
+        if not isinstance(signed_digests, list):
+            return jsonify({"error": "signed_digests must be a list"}), 400
         
         status = check_reg_status(reg_id, key_id)
         if not status:
@@ -636,23 +638,31 @@ def verify_store_signature(msg_id):
         if not public_key:
             return jsonify({"error": "Public key not found."}), 404
 
-        sign_data = session.get(msg_id)
+        sign_data = session.get("sign_"+reg_id)
         if not sign_data:
-            return jsonify({"error": "Message ID not found in session"}), 404
+            return jsonify({"error": "Session ID not found in session"}), 404
         
-        components = sign_data.get("components")
+        digests = sign_data.get("digests")
         ip_addr = sign_data.get("ip")
- 
-        digest = create_sha256_digest(components)
-        if not digest:
-            return jsonify({"error": "Unable to create digest."}), 404
+  
+        for digest in digests:
+            msg_id = digest.get("digest_id")
+            digest_value = digest.get("digest_value")
 
-        status = verify_signature(public_key, signature, digest, timestamp)
+            signed_digest = next((item for item in signed_digests if item.get("sign_id") == msg_id), None)
+            
+            if not signed_digest:
+                pass
 
-        if not status:
-            return jsonify({"error": "Unable to verify signature"}), 404
-        
-        store_message_signature(msg_id, key_id, signature, signer, timestamp, ip_addr)
+            signature = signed_digest.get("sign_value")
+            timestamp = signed_digest.get("timestamp")
+            signed_digests.remove(signed_digest)
+          
+            if not all([signature, timestamp]):
+                pass
+             
+            if verify_signature(public_key, signature, digest_value, timestamp):
+                store_message_signature(msg_id, key_id, signature, signer, timestamp, ip_addr)
 
         return jsonify({"status": "success"}), 200
     except Exception as e:
