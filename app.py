@@ -668,6 +668,8 @@ def verify_store_signature():
     except Exception as e:
         print(f"Error verifyifying signature: {e}")
         return jsonify({"error": "Unable to verify signature"}), 500
+    finally:
+        session.pop("sign_"+reg_id, None)
     
 @app.before_request
 def cleanup_session():
@@ -679,7 +681,7 @@ def cleanup_session():
         keys_to_delete = []
 
         for key, value in session.items():
-            if isinstance(value, dict) and current_time - value.get("stimestamp", 0) > 30:
+            if isinstance(value, dict) and current_time - value.get("stimestamp", 0) > 90:
                 keys_to_delete.append(key)
 
         # Remove expired keys
