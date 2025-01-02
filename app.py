@@ -10,6 +10,8 @@ import sqlite3
 import base64
 import hashlib
 
+USER_ID = "admin"
+
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 CORS(app)
@@ -33,6 +35,28 @@ def create_sha256_digest(components):
     except Exception as e:
         print(f"Error: {e}")
         return None
+ 
+def generate_base64_id(components):
+    """
+    Generate a 16-byte hash-based ID from a list of components and return it as Base64.
+    Each component is concatenated into a single string before hashing.
+    
+    Args:
+        components (list): List of string components to include in the hash.
+
+    Returns:
+        str: Base64-encoded 16-byte hash.
+    """
+    # Join the components into a single string
+    combined_data = ''.join(components).encode('utf-8')
+    
+    # Generate a 16-byte hash (MD5)
+    hash_object = hashlib.md5(combined_data)  # Use MD5 for a 16-byte hash
+    hash_bytes = hash_object.digest()
+    
+    # Encode the hash in Base64
+    id_base64 = base64.b64encode(hash_bytes).decode('utf-8')
+    return id_base64
     
 def verify_signature(public_key, signature, digest_hex, timestamp):
     """
@@ -84,6 +108,7 @@ def init_db():
                 reg_id TEXT PRIMARY KEY,
                 key_id TEXT NOT NULL,
                 owner_name TEXT NOT NULL,
+                user_id TEXT NOT NULL,
                 certificate TEXT NOT NULL,
                 public_key TEXT NOT NULL,
                 nonce TEXT NOT NULL,
@@ -91,6 +116,7 @@ def init_db():
                 client_id TEXT NOT NULL,
                 client_mac TEXT NOT NULL,
                 client_ip TEXT NOT NULL,
+                domain TEXT NOT NULL,
                 timestamp TEXT NOT NULL,
                 last_signed TEXT NOT NULL
             )
@@ -100,6 +126,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS messages (
                 msg_id TEXT PRIMARY KEY,
                 msg_content TEXT NOT NULL,
+                user_id TEXT NOT NULL,
                 last_updated TEXT NOT NULL,
                 key_id TEXT,
                 signature TEXT,
@@ -118,7 +145,7 @@ def init_db():
         if conn:
             conn.close()  # Close the database connection
 
-def store_registration_data(unique_id, key_id, owner_name, certificate, public_key, nonce, signature, client_id, client_mac, client_ip, timestamp):
+def store_registration_data(unique_id, key_id, owner_name, user_id, certificate, public_key, nonce, signature, client_id, client_mac, client_ip, domain, timestamp):
     """
     Store the verified registration data in the 'registered_tokens' SQLite database table.
     All fields except the ID are stored in Base64 format. The ID is derived from a hash of provided components.
@@ -132,9 +159,9 @@ def store_registration_data(unique_id, key_id, owner_name, certificate, public_k
 
         # Insert the verified registration data
         cursor.execute('''
-            INSERT INTO registered_tokens (reg_id, key_id, owner_name, certificate, public_key, nonce, signature, client_id, client_mac, client_ip, timestamp, last_signed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (unique_id, key_id, owner_name, certificate, public_key, nonce, signature, client_id, client_mac, client_ip, timestamp, timestamp,))
+            INSERT INTO registered_tokens (reg_id, key_id, owner_name, user_id, certificate, public_key, nonce, signature, client_id, client_mac, client_ip, domain, timestamp, last_signed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (unique_id, key_id, owner_name, user_id, certificate, public_key, nonce, signature, client_id, client_mac, client_ip, domain, timestamp, timestamp,))
 
         conn.commit()  # Commit the transaction
     except sqlite3.Error as e:
@@ -147,25 +174,63 @@ def store_registration_data(unique_id, key_id, owner_name, certificate, public_k
         if conn:
             conn.close()  # Close the database connection
 
-def check_reg_status(reg_id, key_id):
-    status = False
-
+def check_reg_status(reg_id, key_id, user_id, domain):
     try:
         conn = sqlite3.connect('signData.db')  
         cursor = conn.cursor()
 
-        cursor.execute("SELECT * FROM registered_tokens WHERE reg_id = ? AND key_id = ?", (reg_id, key_id,))
+        cursor.execute("SELECT * FROM registered_tokens WHERE reg_id = ? AND key_id = ? AND user_id = ? AND domain = ?", (reg_id, key_id, user_id, domain))
         result = cursor.fetchone()
 
-        if result:
-            status = True 
+        if not result:
+            return False
+        
+        owner_name = result[2]
+        public_key_hex = result[5]
+        nonce = result[6]
+        signature_hex = result[7]
+        client_id = result[8]
+        client_ip = result[10]
+        timestamp = result[12]
+
+        derived_reg_id = generate_base64_id([client_id, key_id, domain, user_id])
+        if derived_reg_id != reg_id:
+            return False
+        
+        try:
+            # Convert hex-encoded DER public key to bytes and load it
+            public_key_der = binascii.unhexlify(public_key_hex)
+            public_key = serialization.load_der_public_key(public_key_der, backend=default_backend())
+        except ValueError as e:
+            return jsonify({"error": f"Error loading public key: {str(e)}"}), 500
+
+        # Recreate the combined data that was signed
+        combined_data = (nonce + owner_name + timestamp + key_id + client_id + client_ip + domain + USER_ID).encode('utf-8')
+
+        # Decode the received signature from hex
+        signature = binascii.unhexlify(signature_hex)
+
+        try:
+            # Verify the signature using RSA-PKCS1 v1.5 padding with SHA-256
+            public_key.verify(
+                signature,
+                combined_data,  # Hash of the data
+                padding=padding.PKCS1v15(),  # PKCS#1 v1.5 padding
+                algorithm=hashes.SHA256()  # Explicitly specify the hash algorithm
+            )  
+        
+            return True
+        except Exception as e:
+            raise Exception("Signature verification failed.")
     except sqlite3.Error as e:
         print(f"Database error: {e}")
+        return False
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
     finally:
         if conn:
             conn.close()
-
-    return status
 
 def clear_junk_registration(reg_id):
     try:
@@ -199,7 +264,7 @@ def store_message_data(message):
         timestamp = time.time()
 
         conn.execute("BEGIN")
-        cursor.execute('INSERT INTO messages (msg_id, msg_content, last_updated) VALUES (?, ?, ?)', (msg_id, message, timestamp,))
+        cursor.execute('INSERT INTO messages (msg_id, msg_content, user_id, last_updated) VALUES (?, ?, ?, ?)', (msg_id, message, USER_ID, timestamp,))
         conn.commit()
     except sqlite3.Error as e:
         if conn:
@@ -277,8 +342,8 @@ def load_verify_message_data():
         cursor.execute('SELECT msg_id, msg_content, last_updated FROM messages WHERE signature IS NULL ORDER BY last_updated DESC')
         unsigned_messages = [{"msg_id": row[0], "msg_content": row[1], "created_updated_on": row[2], "signed": "N", "verified": "N"} for row in cursor.fetchall()]
         
-        cursor.execute('SELECT msg_id, msg_content, last_updated, key_id, signature, signer, sign_timestamp, ip_address FROM messages WHERE signature IS NOT NULL ORDER BY key_id, last_updated DESC')
-        signed_messages = [{"msg_id": row[0], "msg_content": row[1], "created_updated_on": row[2], "key_id": row[3], "signature": row[4], "signer": row[5], "signed_on": row[6], "ip": row[7], "signed": "Y", "verified": "N"} for row in cursor.fetchall()]
+        cursor.execute('SELECT msg_id, msg_content, user_id, last_updated, key_id, signature, signer, sign_timestamp, ip_address FROM messages WHERE signature IS NOT NULL ORDER BY key_id, last_updated DESC')
+        signed_messages = [{"msg_id": row[0], "msg_content": row[1], "created_updated_on": row[2], "user_id": row[3], "key_id": row[4], "signature": row[5], "signer": row[6], "signed_on": row[7], "ip": row[8], "signed": "Y", "verified": "N"} for row in cursor.fetchall()]
 
         public_key = None
         current_key_id = None 
@@ -288,6 +353,7 @@ def load_verify_message_data():
             timestamp = msg.get("signed_on")
             msg_id = msg.get("msg_id")
             msg_content = msg.get("msg_content")
+            user = msg.get("user_id")
             created_updated_on = msg.get("created_updated_on")
             ip = msg.get("ip")
 
@@ -296,7 +362,7 @@ def load_verify_message_data():
                 current_key_id = key_id
 
             if public_key: 
-                digest_hex = create_sha256_digest([msg_id, msg_content, created_updated_on, ip])
+                digest_hex = create_sha256_digest([msg_id, msg_content, user, created_updated_on, ip])
                 if digest_hex:
                     if verify_signature(public_key, signature, digest_hex, timestamp):
                         msg["verified"] = "Y"
@@ -317,11 +383,11 @@ def get_digest_components(msg_id):
         conn = sqlite3.connect('signData.db')  # Connect to SQLite database
         cursor = conn.cursor()
 
-        cursor.execute('SELECT msg_id, msg_content, last_updated FROM messages WHERE msg_id = ?', (msg_id,))
+        cursor.execute('SELECT msg_id, msg_content, user_id, last_updated FROM messages WHERE msg_id = ?', (msg_id,))
         result = cursor.fetchone()
 
         if result:
-            components = [str(result[0]), str(result[1]), str(result[2])]
+            components = [str(result[0]), str(result[1]), str(result[2]), str(result[3])]
     except sqlite3.Error as e:
         print(f"Database error: {e}")
     finally:
@@ -357,7 +423,7 @@ def return_index():
 
 @app.route('/register')
 def return_register():
-    return render_template('register.html')
+    return render_template('register.html', user_id=USER_ID)
 
 @app.route('/save-edit')
 def return_save_edit():
@@ -371,11 +437,12 @@ def return_sign_verify():
 def reg_status():
     reg_id = request.json.get("reg_id")
     key_id = request.json.get("key_id")
+    domain = request.json.get("domain")
 
-    if not reg_id or not key_id:
+    if not all([reg_id, key_id, domain]):
         return jsonify({"status": "failure"}), 403
 
-    status = check_reg_status(reg_id, key_id)
+    status = check_reg_status(reg_id, key_id, USER_ID, domain)
 
     if status:
         return jsonify({"status": "success"}), 200
@@ -396,7 +463,7 @@ def generate_challenge():
         public_key = request.json.get("public_key")
         client_ip = request.remote_addr
         
-        if not key_id or not certificate or not owner_name or not public_key:
+        if not all([certificate, key_id, owner_name, public_key, client_ip]):
             return jsonify({"error": "Missing required data"}), 400
 
         # Generate nonce
@@ -412,7 +479,7 @@ def generate_challenge():
             "stimestamp": time.time(),  
         }
 
-        return jsonify({"nonce": nonce, "certificate": certificate, "key_id":key_id})
+        return jsonify({"nonce": nonce, "certificate": certificate, "key_id":key_id, "client_ip": client_ip}), 200
     except Exception as e:
         return jsonify({"error": "Failed to generate challenge", "details": str(e)}), 500
 
@@ -429,14 +496,15 @@ def verify_registration():
         timestamp = request.json.get("timestamp")
         client_id = request.json.get("client_id")
         client_mac = request.json.get("client_mac")
+        domain = request.json.get("domain")
 
-        if not unique_id or not key_id or not signature_hex or not timestamp or not client_id or not client_mac:
+        if not all([unique_id, key_id, signature_hex, timestamp, client_id, client_mac, domain]):
             return jsonify({"error": "Missing required data"}), 400
 
         # Check if the key_id exists in the session
         token_data = session.get(key_id)
         if not token_data:
-            return jsonify({"error": "Key ID not found in session"}), 404
+            return jsonify({"error": "Token data not found in session"}), 404
 
         # Fetch required values from the session
         public_key_hex = token_data.get("public_key")
@@ -444,9 +512,6 @@ def verify_registration():
         owner_name = token_data.get("owner_name")
         certificate = token_data.get("certificate")
         client_ip = token_data.get("client_ip")
-
-        if not public_key_hex or not nonce or not owner_name:
-            return jsonify({"error": "Incomplete token data in session"}), 500
 
         try:
             # Convert hex-encoded DER public key to bytes and load it
@@ -456,7 +521,7 @@ def verify_registration():
             return jsonify({"error": f"Error loading public key: {str(e)}"}), 500
 
         # Recreate the combined data that was signed
-        combined_data = (nonce + owner_name + timestamp + key_id + client_id).encode('utf-8')
+        combined_data = (nonce + owner_name + timestamp + key_id + client_id + client_ip + domain + USER_ID).encode('utf-8')
 
         # Decode the received signature from hex
         signature = binascii.unhexlify(signature_hex)
@@ -480,6 +545,7 @@ def verify_registration():
                 "client_id": client_id,
                 "client_mac": client_mac,
                 "client_ip": client_ip,
+                "domain": domain,
                 "timestamp": timestamp,
                 "stimestamp": time.time(),
             }
@@ -510,10 +576,11 @@ def update_verification_status():
         client_id = reg_data.get("client_id") 
         client_mac = reg_data.get("client_mac") 
         client_ip = reg_data.get("client_ip") 
+        domain = reg_data.get("domain")
         timestamp = reg_data.get("timestamp")
 
         store_registration_data(
-            reg_id, key_id, owner_name, certificate, public_key_hex, nonce, signature_hex, client_id, client_mac, client_ip, timestamp
+            reg_id, key_id, owner_name, USER_ID, certificate, public_key_hex, nonce, signature_hex, client_id, client_mac, client_ip, domain, timestamp
         )
 
         return jsonify({"status": "success"})
@@ -579,6 +646,7 @@ def get_message_digest():
         key_id = request.json.get('key_id')
         msg_ids = request.json.get('msg_ids')
         client_ip = request.remote_addr
+        domain = request.json.get('domain')
 
         if not all([reg_id, key_id, msg_ids, client_ip]):
             return jsonify({"error": "Incomplete data to generate message digest"}), 400
@@ -586,7 +654,7 @@ def get_message_digest():
         if not isinstance(msg_ids, list):
             return jsonify({"error": "msg_ids must be a list"}), 400
         
-        status = check_reg_status(reg_id, key_id)
+        status = check_reg_status(reg_id, key_id, USER_ID, domain)
         if not status:
             return jsonify({"error": "DSC Token not registered"}), 404
         
@@ -623,6 +691,7 @@ def verify_store_signature():
         reg_id = request.json.get('reg_id')
         key_id = request.json.get('key_id')
         signed_digests = request.json.get('signed_digests')
+        domain = request.json.get('domain')
 
         if not all([reg_id, key_id, signed_digests]):
             return jsonify({"error": "Incomplete data to verify signature"}), 400
@@ -630,7 +699,7 @@ def verify_store_signature():
         if not isinstance(signed_digests, list):
             return jsonify({"error": "signed_digests must be a list"}), 400
         
-        status = check_reg_status(reg_id, key_id)
+        status = check_reg_status(reg_id, key_id, USER_ID, domain)
         if not status:
             return jsonify({"error": "DSC Token not registered"}), 404
         

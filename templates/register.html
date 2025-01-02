@@ -126,12 +126,20 @@
     <script>
       // JavaScript logic remains unchanged
       let tokenData = null;
+      const domain = window.location.hostname;
+      const userId = "{{ user_id }}";
 
       function loadTokens() {
         const tokenItems = document.getElementById("token-item");
         tokenItems.innerHTML = `<li>Loading tokens...</li>`; // Show loading message
 
-        fetch("http://127.0.0.1:8080/list-token")
+        fetch("http://127.0.0.1:8080/list-token", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ user_id: userId, domain: domain }),
+        })
           .then((response) => {
             if (!response.ok) {
               throw new Error(
@@ -185,7 +193,11 @@
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ reg_id: regId, key_id: dscKeyId }), // Send reg_id
+          body: JSON.stringify({
+            reg_id: regId,
+            key_id: dscKeyId,
+            domain: domain,
+          }),
         })
           .then((response) => response.json())
           .then((data) => {
@@ -260,6 +272,9 @@
                   nonce: data.nonce,
                   certificate: data.certificate,
                   key_id: data.key_id,
+                  user_id: userId,
+                  client_ip: data.client_ip,
+                  domain: domain,
                 }),
               })
                 .then((response) => response.json())
@@ -278,6 +293,7 @@
                         client_mac: result.client_mac,
                         client_id: result.client_id,
                         reg_id: result.reg_id,
+                        domain: domain,
                       }),
                     })
                       .then((response) => response.json())
