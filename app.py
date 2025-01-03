@@ -343,7 +343,7 @@ def load_verify_message_data():
         unsigned_messages = [{"msg_id": row[0], "msg_content": row[1], "created_updated_on": row[2], "signed": "N", "verified": "N"} for row in cursor.fetchall()]
         
         cursor.execute('SELECT msg_id, msg_content, user_id, last_updated, key_id, signature, signer, sign_timestamp, ip_address FROM messages WHERE signature IS NOT NULL ORDER BY key_id, last_updated DESC')
-        signed_messages = [{"msg_id": row[0], "msg_content": row[1], "created_updated_on": row[2], "user_id": row[3], "key_id": row[4], "signature": row[5], "signer": row[6], "signed_on": row[7], "ip": row[8], "signed": "Y", "verified": "N"} for row in cursor.fetchall()]
+        signed_messages = [{"msg_id": row[0], "msg_content": row[1], "user_id": row[2], "created_updated_on": row[3], "key_id": row[4], "signature": row[5], "signer": row[6], "signed_on": row[7], "ip": row[8], "signed": "Y", "verified": "N"} for row in cursor.fetchall()]
 
         public_key = None
         current_key_id = None 
@@ -431,7 +431,7 @@ def return_save_edit():
 
 @app.route('/sign-verify')
 def return_sign_verify():
-    return render_template('sign_verify.html')
+    return render_template('sign_verify.html', user_id=USER_ID)
 
 @app.route('/api/reg-status', methods=['POST'])
 def reg_status():

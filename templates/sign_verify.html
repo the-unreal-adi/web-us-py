@@ -168,6 +168,8 @@
       let tokenData = null;
       let allowSigning = false;
       let forSigning = [];
+      const domain = window.location.hostname;
+      const userId = "{{ user_id }}";
 
       function updateSignButtonState() {
         const signButton = document.getElementById("sign");
@@ -299,6 +301,7 @@
             reg_id: tokenData.reg_id,
             key_id: tokenData.key_id,
             msg_ids: forSigning,
+            domain: domain,
           }),
         })
           .then((response) => {
@@ -319,6 +322,8 @@
                   digests: data.digests,
                   reg_id: data.reg_id,
                   key_id: data.key_id,
+                  user_id: userId,
+                  domain: domain,
                 }),
               })
                 .then((response) => {
@@ -344,6 +349,7 @@
                         signed_digests: signData.signed_digests,
                         reg_id: signData.reg_id,
                         key_id: signData.key_id,
+                        domain: domain,
                       }),
                     })
                       .then((response) => {
@@ -383,7 +389,13 @@
           const tokenItems = document.getElementById("token-item");
           tokenItems.innerHTML = `<li>Loading tokens...</li>`;
 
-          fetch("http://127.0.0.1:8080/list-token")
+          fetch("http://127.0.0.1:8080/list-token", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ user_id: userId, domain: domain }),
+          })
             .then((response) => {
               if (!response.ok) {
                 throw new Error(
@@ -445,7 +457,11 @@
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ reg_id: regId, key_id: dscKeyId }), // Send reg_id
+            body: JSON.stringify({
+              reg_id: regId,
+              key_id: dscKeyId,
+              domain: domain,
+            }),
           })
             .then((response) => response.json())
             .then((data) => {
