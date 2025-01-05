@@ -398,6 +398,11 @@
           })
             .then((response) => {
               if (!response.ok) {
+                if (response.status === 410) {
+                  alert(
+                    "Domain mapping not found. Please map domain to continue..."
+                  );
+                }
                 throw new Error(
                   `Failed to fetch tokens. Status: ${response.status}`
                 );
