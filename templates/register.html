@@ -133,7 +133,7 @@
         const tokenItems = document.getElementById("token-item");
         tokenItems.innerHTML = `<li>Loading tokens...</li>`; // Show loading message
 
-        fetch("http://127.0.0.1:8080/list-token", {
+        fetch("http://127.0.0.1:41769/list-token", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -215,7 +215,7 @@
               registeredMessage.style.textAlign = "center";
               tokenList.appendChild(registeredMessage);
             } else {
-              fetch("http://127.0.0.1:8080/list-token", {
+              fetch("http://127.0.0.1:41769/list-token", {
                 method: "PATCH",
                 headers: {
                   "Content-Type": "application/json",
@@ -268,7 +268,7 @@
           .then((data) => {
             if (data.nonce && data.certificate) {
               // Send data to the /register-token endpoint
-              fetch("http://127.0.0.1:8080/register-token", {
+              fetch("http://127.0.0.1:41769/register-token", {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
@@ -305,7 +305,7 @@
                       .then((verifyResult) => {
                         if (verifyResult.status === "success") {
                           // Call PATCH on /register-token with reg_id
-                          fetch("http://127.0.0.1:8080/register-token", {
+                          fetch("http://127.0.0.1:41769/register-token", {
                             method: "PATCH",
                             headers: {
                               "Content-Type": "application/json",
