@@ -685,7 +685,7 @@ def get_message_digest():
         print(f"Error getting message digest: {e}")
         return jsonify({"error": "Unable to get message digest"}), 500
     
-@app.route('/api/verify-sign/', methods=['POST'])
+@app.route('/api/verify-sign', methods=['POST'])
 def verify_store_signature():
     try:
         reg_id = request.json.get('reg_id')
