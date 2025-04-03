@@ -222,6 +222,7 @@
                 },
                 body: JSON.stringify({
                   reg_id: regId,
+                  domain: domain,
                 }),
               });
               console.log("Registration status check failed.");
@@ -312,6 +313,7 @@
                             },
                             body: JSON.stringify({
                               reg_id: verifyResult.reg_id,
+                              domain: domain,
                             }),
                           })
                             .then((response) => response.json())
