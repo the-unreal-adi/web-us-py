@@ -27,7 +27,7 @@ def create_sha256_digest(components):
         if not isinstance(components, list):
             raise TypeError("Components must be a list.")
         
-        combined_data = ''.join(components).encode('utf-8')
+        combined_data = '|'.join(components).encode('utf-8')
         
         hash_object = hashlib.sha256(combined_data)
         digest = hash_object.hexdigest()
@@ -38,7 +38,7 @@ def create_sha256_digest(components):
  
 def generate_base64_id(components):
     # Join the components into a single string
-    combined_data = ''.join(components).encode('utf-8')
+    combined_data = '|'.join(components).encode('utf-8')
     
     hash_object = hashlib.sha1(combined_data)  
     hash_bytes = hash_object.digest()
@@ -63,7 +63,7 @@ def verify_signature(public_key, signature, digest_hex, timestamp):
             raise
 
         # Recreate the combined data that was signed
-        combined_data = (digest_hex + timestamp).encode('utf-8')
+        combined_data = '|'.join([digest_hex, timestamp]).encode('utf-8')
 
         # Decode the received signature from hex
         signature_final = binascii.unhexlify(signature)
@@ -194,7 +194,7 @@ def check_reg_status(reg_id, key_id, user_id, domain):
             return jsonify({"error": f"Error loading public key: {str(e)}"}), 500
 
         # Recreate the combined data that was signed
-        combined_data = (nonce + owner_name + timestamp + key_id + client_id + client_ip + domain + USER_ID).encode('utf-8')
+        combined_data = '|'.join([reg_id, nonce, owner_name, timestamp, key_id, client_id, client_ip, domain, USER_ID]).encode('utf-8')
 
         # Decode the received signature from hex
         signature = binascii.unhexlify(signature_hex)
@@ -510,7 +510,7 @@ def verify_registration():
             return jsonify({"error": f"Error loading public key: {str(e)}"}), 500
 
         # Recreate the combined data that was signed
-        combined_data = (nonce + owner_name + timestamp + key_id + client_id + client_ip + domain + USER_ID).encode('utf-8')
+        combined_data = '|'.join([unique_id, nonce, owner_name, timestamp, key_id, client_id, client_ip, domain, USER_ID]).encode('utf-8')
 
         # Decode the received signature from hex
         signature = binascii.unhexlify(signature_hex)
