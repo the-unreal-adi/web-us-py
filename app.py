@@ -4,6 +4,7 @@ import binascii
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.backends import default_backend
+from datetime import datetime, timedelta, timezone
 import secrets
 import time
 import sqlite3
@@ -81,6 +82,31 @@ def verify_signature(public_key, signature, digest_hex, timestamp):
             raise Exception("Signature verification failed.") 
     except Exception as e:
         print(f"Error: {e}")
+        return False
+    
+def is_fresh_timestamp(timestamp_str: str, allowed_drift_minutes: int = 5) -> bool:
+    try:
+        # Parse the incoming ISO 8601 timestamp with timezone
+        request_time = datetime.fromisoformat(timestamp_str)
+        
+        # Ensure timestamp is timezone-aware
+        if request_time.tzinfo is None:
+            raise ValueError("Timestamp must be timezone-aware")
+
+        # Get current UTC time
+        now = datetime.now(timezone.utc)
+
+        # Calculate allowed drift
+        allowed_drift = timedelta(minutes=allowed_drift_minutes)
+
+        # Check if timestamp is within the allowed time window
+        if abs(now - request_time) <= allowed_drift:
+            return True
+        else:
+            return False
+
+    except ValueError as ve:
+        print(f"Invalid timestamp format: {ve}")
         return False
     
 def init_db():
@@ -250,7 +276,7 @@ def store_message_data(message):
 
         msg_id = base64.b64encode((secrets.token_hex(16)).encode('utf-8')).decode('utf-8')
 
-        timestamp = time.time()
+        timestamp = datetime.now(timezone.utc).isoformat(timespec='microseconds') 
 
         conn.execute("BEGIN")
         cursor.execute('INSERT INTO messages (msg_id, msg_content, user_id, last_updated) VALUES (?, ?, ?, ?)', (msg_id, message, USER_ID, timestamp,))
@@ -269,7 +295,7 @@ def update_message_data(msg_id, message):
         conn = sqlite3.connect('signData.db')  # Connect to SQLite database
         cursor = conn.cursor()
 
-        timestamp = time.time()
+        timestamp = datetime.now(timezone.utc).isoformat(timespec='microseconds') 
 
         conn.execute("BEGIN")
         cursor.execute('UPDATE messages SET msg_content = ?, last_updated = ? WHERE msg_id = ?', (message, timestamp, msg_id))
@@ -494,6 +520,10 @@ def verify_registration():
         token_data = session.get(key_id)
         if not token_data:
             return jsonify({"error": "Token data not found in session"}), 404
+        
+        # Validate the timestamp
+        if not is_fresh_timestamp(timestamp):
+            return jsonify({"error": "Timestamp is not fresh or valid"}), 400
 
         # Fetch required values from the session
         public_key_hex = token_data.get("public_key")
@@ -710,14 +740,18 @@ def verify_store_signature():
             signed_digest = next((item for item in signed_digests if item.get("sign_id") == msg_id), None)
             
             if not signed_digest:
-                pass
+                continue
 
             signature = signed_digest.get("sign_value")
             timestamp = signed_digest.get("timestamp")
             signed_digests.remove(signed_digest)
           
             if not all([signature, timestamp]):
-                pass
+                continue
+
+            if not is_fresh_timestamp(timestamp):
+                print(f"Timestamp {timestamp} is not fresh for msg_id {msg_id}")
+                continue
              
             if verify_signature(public_key, signature, digest_value, timestamp):
                 store_message_signature(msg_id, key_id, signature, signer, timestamp, ip_addr)
